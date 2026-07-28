@@ -1,15 +1,14 @@
 "use client";
 
 import React from "react";
-import { ToastProvider } from "@/components/ToastProvider";
-import { TaskStoreProvider } from "@/lib/store"; // התיקון כאן! 
+import { ToastProvider } from "@/components/ui/toast"; 
+import { Toaster } from "@/components/ui/toaster";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <TaskStoreProvider>
-      <ToastProvider>
-        {children}
-      </ToastProvider>
-    </TaskStoreProvider>
+    <ToastProvider>
+      {children}
+      <Toaster />
+    </ToastProvider>
   );
 }
