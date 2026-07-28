@@ -1,22 +1,13 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Providers } from "./providers";
+import { Providers } from "./providers"; // 1. להוסיף את הייבוא הזה בראש הקובץ
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Task PWA",
-  description: "Task Management Application",
-  manifest: "/manifest.json",
-};
-
-export const viewport: Viewport = {
-  themeColor: "#000000",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  description: "Task Management App",
 };
 
 export default function RootLayout({
@@ -25,15 +16,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl" className="h-full">
-      <body className={`${inter.className} min-h-full bg-slate-950 text-slate-50 antialiased flex flex-col overflow-y-auto`}>
-        <Providers>
-          <div className="w-full min-h-screen flex flex-col relative overflow-x-hidden px-4 sm:px-6 md:px-8 max-w-7xl mx-auto">
-            <main className="flex-1 flex flex-col w-full h-full py-6">
-              {children}
-            </main>
-          </div>
-        </Providers>
+    <html lang="he" dir="rtl">
+      <body className={inter.className}>
+        <Providers> {/* 2. לעטוף כאן */}
+          {children}
+        </Providers> {/* 3. ולסגור כאן */}
       </body>
     </html>
   );
