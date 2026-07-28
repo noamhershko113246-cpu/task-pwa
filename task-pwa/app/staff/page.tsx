@@ -230,7 +230,7 @@ function StaffDashboardInner() {
       {canCreateOwnTask && (
         <button
           onClick={() => setSheetOpen(true)}
-          className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+          className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
         >
           <Plus size={20} strokeWidth={2.5} />
           משימה חדשה

@@ -258,11 +258,11 @@ function ManagerDashboardInner() {
           </section>
 
           {/* Managed people's rings — tap to view and update their tasks */}
-          <section className="mb-5">
+          <section className="mb-8">
             <p className="mb-3 px-1 text-sm font-bold text-ink dark:text-ink-dark">
               {me.isSuperManager ? "התקדמות לפי איש/אשת משרד" : "התקדמות לפי חייל/ת"}
             </p>
-            <div className="flex gap-3 overflow-x-auto pb-1">
+            <div className="flex gap-3 overflow-x-auto overscroll-x-contain pb-1">
               {managed.map(({ member, percent, total }) => (
                 <Link
                   key={member.id}
@@ -279,6 +279,7 @@ function ManagerDashboardInner() {
               ))}
             </div>
           </section>
+
 
           {/* Overdue — gentle pulsing red flags, tap to edit */}
           {overdueTasks.length > 0 && (
@@ -328,7 +329,7 @@ function ManagerDashboardInner() {
       {/* Floating create-task button, sitting above the bottom nav */}
       <button
         onClick={() => setSheetOpen(true)}
-        className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+        className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
       >
         <Plus size={20} strokeWidth={2.5} />
         משימה חדשה
