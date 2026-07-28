@@ -59,6 +59,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast() {
   const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error("useToast must be used within a ToastProvider");
+  if (!ctx) {
+    // Fail soft instead of throwing: a toast is supplementary UX, and this
+    // hook is called from deep inside the data layer (lib/store.tsx) — a
+    // hard throw here would cascade into breaking the whole app in any edge
+    // case where the provider isn't mounted yet (e.g. Next.js's
+    // auto-generated /_not-found prerender pass).
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("useToast called outside ToastProvider — toast will be a no-op.");
+    }
+    return { showToast: () => {} };
+  }
   return ctx;
 }
