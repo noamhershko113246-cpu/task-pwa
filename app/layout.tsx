@@ -1,49 +1,44 @@
 import type { Metadata, Viewport } from "next";
-import { Rubik } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { TaskStoreProvider } from "@/lib/store";
+// ייבוא ה-Provider הנדרש כדי לעטוף את האפליקציה
+import { ToastProvider, Toaster } from "@/components/ui/toaster";
 
-const rubik = Rubik({
-  subsets: ["hebrew", "latin"],
-  variable: "--font-rubik",
-  weight: ["400", "500", "600", "700", "800"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "משימות המשרד",
-  description: "ניהול משימות יומי למשרד — פשוט, ברור ומספק",
+  title: "Task PWA",
+  description: "Task Management Application",
   manifest: "/manifest.json",
-  icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "משימות",
-  },
 };
 
 export const viewport: Viewport = {
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
-    { media: "(prefers-color-scheme: dark)", color: "#18181b" },
-  ],
+  userScalable: false,
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html lang="he" dir="rtl" className={rubik.variable}>
-      <body className="font-sans antialiased min-h-dvh">
-        <TaskStoreProvider>{children}</TaskStoreProvider>
+    <html lang="he" dir="rtl" className="h-full">
+      <body className={`${inter.className} min-h-full bg-slate-950 text-slate-50 antialiased flex flex-col overflow-y-auto`}>
+        
+        {/* עטיפת כל האפליקציה בתוך ה-ToastProvider */}
+        <ToastProvider>
+          <div className="w-full min-h-screen flex flex-col relative overflow-x-hidden px-4 sm:px-6 md:px-8 max-w-7xl mx-auto">
+            <main className="flex-1 flex flex-col w-full h-full py-6">
+              {children}
+            </main>
+            <Toaster />
+          </div>
+        </ToastProvider>
+
       </body>
     </html>
   );
