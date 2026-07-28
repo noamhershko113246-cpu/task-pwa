@@ -145,6 +145,19 @@ export function compareByDeadlineDesc(a: { deadline: string | null }, b: { deadl
   return a.deadline < b.deadline ? 1 : -1;
 }
 
+/** Tasks that still count toward completion metrics — cancelled tasks are excluded entirely. */
+export function activeTasks<T extends { status: string }>(tasks: T[]): T[] {
+  return tasks.filter((t) => t.status !== "cancelled");
+}
+
+/** Completion percentage among active (non-cancelled) tasks only, so cancelling a task never drags the number down. */
+export function completionPercent(tasks: { status: string }[]): number {
+  const active = activeTasks(tasks);
+  if (active.length === 0) return 0;
+  const done = active.filter((t) => t.status === "done").length;
+  return (done / active.length) * 100;
+}
+
 export function formatFullDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });

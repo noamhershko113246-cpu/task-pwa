@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Lock, Eye, LogOut, Plus } from "lucide-react";
+import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2 } from "lucide-react";
 import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -19,6 +19,8 @@ import TaskDetailSheet from "@/components/TaskDetailSheet";
 import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import AITriageSheet from "@/components/AITriageSheet";
+import ProductivityWrapped from "@/components/ProductivityWrapped";
 
 const UNDO_WINDOW_MS = 6000;
 
@@ -62,6 +64,7 @@ function StaffDashboardInner() {
   const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [undoTask, setUndoTask] = useState<{ id: string; title: string } | null>(null);
+  const [triageOpen, setTriageOpen] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openTasks = useMemo(() => {
@@ -123,6 +126,14 @@ function StaffDashboardInner() {
         ) : (
           <div className="flex shrink-0 items-center gap-2">
             <NotificationBell userId={member.id} />
+            <button
+              onClick={() => setTriageOpen(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
+              aria-label="טריאז׳ חכם"
+              title="טריאז׳ חכם"
+            >
+              <Wand2 size={16} />
+            </button>
             {member.isManager && (
               <a
                 href="/manager"
@@ -168,6 +179,8 @@ function StaffDashboardInner() {
       <div className="mb-4">
         <PriorityFilter selected={priorityFilter} onChange={setPriorityFilter} />
       </div>
+
+      {!isFiltering && <ProductivityWrapped tasks={tasks} />}
 
       {openTasks.length > 0 && !isFiltering && (
         <p className="mb-3 px-1 text-sm font-medium text-ink-soft dark:text-ink-dark-soft">
@@ -230,6 +243,16 @@ function StaffDashboardInner() {
         onUpdate={updateTask}
         onDelete={deleteTask}
         onAddComment={addComment}
+      />
+
+      <AITriageSheet
+        open={triageOpen}
+        tasks={tasks}
+        onClose={() => setTriageOpen(false)}
+        onOpenDetail={(task) => {
+          setTriageOpen(false);
+          setDetailTask(task);
+        }}
       />
 
       <BottomNav base="staff" />
