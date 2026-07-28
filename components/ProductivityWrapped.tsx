@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, PanInfo } from "framer-motion";
 import { Sparkles, Trophy, Clock3, TrendingUp, LucideIcon } from "lucide-react";
 import { Task } from "@/lib/types";
 import { computeWrappedStats } from "@/lib/insights";
+
+const SWIPE_THRESHOLD = 60;
 
 function formatHours(hours: number): string {
   if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} דקות`;
@@ -56,6 +58,13 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
     },
   ];
 
+  const goTo = (i: number) => setSlide(((i % slides.length) + slides.length) % slides.length);
+
+  const handleDragEnd = (_: unknown, info: PanInfo) => {
+    if (info.offset.x <= -SWIPE_THRESHOLD) goTo(slide + 1);
+    else if (info.offset.x >= SWIPE_THRESHOLD) goTo(slide - 1);
+  };
+
   const current = slides[slide];
   const Icon = current.icon;
 
@@ -70,11 +79,15 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
         <AnimatePresence mode="wait">
           <motion.div
             key={slide}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.7}
+            onDragEnd={handleDragEnd}
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.3 }}
-            className="min-h-[104px]"
+            className="min-h-[104px] cursor-grab touch-pan-y active:cursor-grabbing"
           >
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
               <Icon size={20} />
@@ -96,7 +109,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
           {slides.map((_, i) => (
             <button
               key={i}
-              onClick={() => setSlide(i)}
+              onClick={() => goTo(i)}
               aria-label={`שקופית ${i + 1}`}
               className={`h-1.5 flex-1 rounded-full transition-colors ${i === slide ? "bg-white" : "bg-white/30"}`}
             />
