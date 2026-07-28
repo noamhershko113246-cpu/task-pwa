@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, ReactNode, useRef } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode, useRef } from "react";
 import { Task, ActivityEvent, TeamMember, Comment, TaskStatus, Priority, STATUS_LABELS } from "./types";
 import { supabase } from "./supabase";
+import { useToast } from "@/components/ToastProvider";
 
 const AVATAR_COLORS: [string, string][] = [
   ["from-sky-400", "to-sky-600"],
@@ -110,12 +111,14 @@ interface TaskStoreValue {
   deleteTask: (id: string, scope: "one" | "series") => void;
   addComment: (taskId: string, userId: string, text: string) => void;
   addMember: (name: string, phone: string) => void;
+  updateMember: (id: string, patch: { name?: string; phone?: string }) => void;
   removeMember: (id: string) => void;
 }
 
 const TaskStoreContext = createContext<TaskStoreValue | null>(null);
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [rawTasks, setRawTasks] = useState<Omit<Task, "comments">[]>([]);
@@ -123,8 +126,24 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const teamRef = useRef<TeamMember[]>([]);
   teamRef.current = team;
+  const rawTasksRef = useRef<Omit<Task, "comments">[]>([]);
+  rawTasksRef.current = rawTasks;
 
-  const findMember = (id: string) => teamRef.current.find((m) => m.id === id);
+  // Reading from refs (always current) rather than closing over state directly means
+  // every function below can be wrapped in useCallback with a stable, minimal
+  // dependency list — instead of a new function identity on every single render.
+  const findMember = useCallback((id: string) => teamRef.current.find((m) => m.id === id), []);
+
+  /** Surfaces a Supabase error as a toast. Returns true if there WAS an error (so callers can bail out). */
+  const reportIfError = useCallback(
+    (error: { message: string } | null, actionLabel: string): boolean => {
+      if (!error) return false;
+      console.error(`${actionLabel} failed:`, error.message);
+      showToast(`${actionLabel} נכשל — נסו שוב. אם זה חוזר, בדקו את החיבור לאינטרנט.`, "error");
+      return true;
+    },
+    [showToast]
+  );
 
   // Initial fetch
   useEffect(() => {
@@ -137,6 +156,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
       ]);
       if (cancelled) return;
+      if (teamRes.error || tasksRes.error) {
+        showToast("לא הצלחנו לטעון את הנתונים. בדקו את החיבור לאינטרנט ורעננו את הדף.", "error");
+      }
       if (teamRes.data) setTeam(teamRes.data.map(memberFromRow));
       if (tasksRes.data) setRawTasks(tasksRes.data.map(taskFromRow));
       if (commentsRes.data) {
@@ -204,27 +226,27 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const logActivity = async (event: Omit<ActivityEvent, "id" | "timestamp">) => {
+  const logActivity = useCallback(async (event: Omit<ActivityEvent, "id" | "timestamp">) => {
     await supabase.from("activity_log").insert({
       user_id: event.userId || null,
       task_id: event.taskId || null,
       task_title: event.taskTitle,
       action: event.action,
     });
-  };
+  }, []);
 
-  const sendPush = (userIds: string[], title: string, body: string, url?: string) => {
+  const sendPush = useCallback((userIds: string[], title: string, body: string, url?: string) => {
     if (userIds.length === 0) return;
     fetch("/api/push/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIds, title, body, url }),
     }).catch(() => {
-      // push is best-effort — a failed send should never break the app
+      // push is best-effort — a failed send should never break the app (and doesn't need its own error toast)
     });
-  };
+  }, []);
 
-  const createTasks: TaskStoreValue["createTasks"] = (newTasks) => {
+  const createTasks: TaskStoreValue["createTasks"] = useCallback((newTasks) => {
     (async () => {
       const rows = newTasks.map((t) => ({
         title: t.title,
@@ -236,32 +258,58 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         created_by: t.createdBy ?? null,
         status: "todo",
       }));
-      const { data } = await supabase.from("tasks").insert(rows).select();
+      const { data, error } = await supabase.from("tasks").insert(rows).select();
+      if (reportIfError(error, "יצירת המשימה")) return;
       if (data) {
-        for (const row of data as TaskRow[]) {
+        const createdRows = data as TaskRow[];
+        showToast(createdRows.length > 1 ? `${createdRows.length} משימות נוצרו בהצלחה` : "המשימה נוצרה בהצלחה");
+
+        // Build every activity_log row up front and insert them all in one request,
+        // instead of one `await` per task (which was serial and slow for recurring batches).
+        const activityRows = createdRows.map((row) => {
           const names = row.assignee_ids.map((id) => findMember(id)?.name ?? "").filter(Boolean).join(", ");
           const creator = row.created_by ? findMember(row.created_by) : undefined;
-          await logActivity({
-            userId: row.created_by ?? row.assignee_ids[0] ?? "",
-            taskId: row.id,
-            taskTitle: row.title,
+          return {
+            user_id: row.created_by || row.assignee_ids[0] || null,
+            task_id: row.id,
+            task_title: row.title,
             action: `${creator?.isManager ? "יצרה" : "יצר/ה"} משימה עבור ${names}`,
-          });
-          const creatorName = creator?.name ?? "";
-          const selfAssignedIds = row.assignee_ids.filter((id) => id === row.created_by);
-          const givenByOthersIds = row.assignee_ids.filter((id) => id !== row.created_by);
-          if (selfAssignedIds.length > 0) {
-            sendPush(selfAssignedIds, "נוספה משימה חדשה", row.title, `/staff?user=${selfAssignedIds[0]}`);
+          };
+        });
+        await supabase.from("activity_log").insert(activityRows);
+
+        // Group pushes by (recipient, self-assigned?) so someone getting 13 recurring
+        // instances gets ONE push ("13 משימות חדשות"), not 13 separate notifications.
+        const pushGroups = new Map<string, { userId: string; isSelf: boolean; creatorName: string; url: string; count: number; lastTitle: string }>();
+        for (const row of createdRows) {
+          const creator = row.created_by ? findMember(row.created_by) : undefined;
+          for (const id of row.assignee_ids) {
+            const isSelf = id === row.created_by;
+            const key = `${id}:${isSelf}`;
+            const existing = pushGroups.get(key);
+            pushGroups.set(key, {
+              userId: id,
+              isSelf,
+              creatorName: creator?.name ?? "",
+              url: `/staff?user=${id}`,
+              count: (existing?.count ?? 0) + 1,
+              lastTitle: row.title,
+            });
           }
-          if (givenByOthersIds.length > 0) {
-            sendPush(givenByOthersIds, `קיבלת משימה מ${creatorName}`, row.title, `/staff?user=${givenByOthersIds[0]}`);
-          }
+        }
+        for (const group of pushGroups.values()) {
+          const single = group.count === 1;
+          const title = group.isSelf
+            ? single ? "נוספה משימה חדשה" : "נוספו לך משימות"
+            : single ? `קיבלת משימה מ${group.creatorName}` : `קיבלת משימות מ${group.creatorName}`;
+          const body = single ? group.lastTitle : `${group.count} משימות חדשות`;
+          sendPush([group.userId], title, body, group.url);
         }
       }
     })();
-  };
+  }, [findMember, logActivity, sendPush, reportIfError, showToast]);
 
-  const updateTask: TaskStoreValue["updateTask"] = (id, patch) => {
+  const updateTask: TaskStoreValue["updateTask"] = useCallback((id, patch) => {
     (async () => {
       const dbPatch: Record<string, unknown> = {};
       if (patch.title !== undefined) dbPatch.title = patch.title;
@@ -276,10 +324,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       }
       if (patch.priority !== undefined) dbPatch.priority = patch.priority;
       if (patch.previousStatus !== undefined) dbPatch.previous_status = patch.previousStatus;
-      await supabase.from("tasks").update(dbPatch).eq("id", id);
+      const { error } = await supabase.from("tasks").update(dbPatch).eq("id", id);
+      if (reportIfError(error, "עדכון המשימה")) return;
 
       if (patch.status !== undefined) {
-        const task = rawTasks.find((t) => t.id === id);
+        const task = rawTasksRef.current.find((t) => t.id === id);
         const managerIds = teamRef.current.filter((m) => m.isManager).map((m) => m.id);
         if (task) {
           sendPush(
@@ -291,56 +340,79 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }
       }
     })();
-  };
+  }, [sendPush, reportIfError]);
 
-  const deleteTask: TaskStoreValue["deleteTask"] = (id, scope) => {
+  const deleteTask: TaskStoreValue["deleteTask"] = useCallback((id, scope) => {
     (async () => {
       if (scope === "series") {
-        const target = rawTasks.find((t) => t.id === id);
+        const target = rawTasksRef.current.find((t) => t.id === id);
         if (target?.recurrenceId) {
-          await supabase.from("tasks").delete().eq("recurrence_id", target.recurrenceId);
+          const { error } = await supabase.from("tasks").delete().eq("recurrence_id", target.recurrenceId);
+          if (reportIfError(error, "מחיקת הסדרה")) return;
+          showToast("הסדרה החוזרת בוטלה");
           return;
         }
       }
-      await supabase.from("tasks").delete().eq("id", id);
+      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      if (reportIfError(error, "מחיקת המשימה")) return;
+      showToast("המשימה נמחקה");
     })();
-  };
+  }, [reportIfError, showToast]);
 
-  const addComment: TaskStoreValue["addComment"] = (taskId, userId, text) => {
+  const addComment: TaskStoreValue["addComment"] = useCallback((taskId, userId, text) => {
     (async () => {
       const commenter = findMember(userId);
-      const task = rawTasks.find((t) => t.id === taskId);
-      await supabase.from("task_comments").insert({ task_id: taskId, user_id: userId, text });
+      const task = rawTasksRef.current.find((t) => t.id === taskId);
+      const { error } = await supabase.from("task_comments").insert({ task_id: taskId, user_id: userId, text });
+      if (reportIfError(error, "שליחת ההערה")) return;
       await logActivity({ userId, taskId, taskTitle: task?.title ?? "", action: `${commenter?.isManager ? "הוסיפה" : "הוסיף/ה"} הערה` });
       if (task) {
         const managerIds = teamRef.current.filter((m) => m.isManager && m.id !== userId).map((m) => m.id);
         sendPush(managerIds, `הערה חדשה מ${commenter?.name ?? ""}`, `"${task.title}": ${text}`, "/manager");
       }
     })();
-  };
+  }, [findMember, logActivity, sendPush, reportIfError]);
 
-  const addMember: TaskStoreValue["addMember"] = (name, phone) => {
+  const addMember: TaskStoreValue["addMember"] = useCallback((name, phone) => {
     (async () => {
-      const [colorFrom, colorTo] = AVATAR_COLORS[team.length % AVATAR_COLORS.length];
-      await supabase.from("team_members").insert({
+      const [colorFrom, colorTo] = AVATAR_COLORS[teamRef.current.length % AVATAR_COLORS.length];
+      const { error } = await supabase.from("team_members").insert({
         name: name.trim(),
         initials: name.trim().slice(0, 2),
         color_from: colorFrom,
         color_to: colorTo,
         phone,
       });
+      if (reportIfError(error, "הוספת החייל/ת")) return;
+      showToast(`${name.trim()} נוסף/ה בהצלחה לצוות`);
     })();
-  };
+  }, [reportIfError, showToast]);
 
-  const removeMember: TaskStoreValue["removeMember"] = (id) => {
+  const updateMember: TaskStoreValue["updateMember"] = useCallback((id, patch) => {
     (async () => {
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) {
+        dbPatch.name = patch.name.trim();
+        dbPatch.initials = patch.name.trim().slice(0, 2);
+      }
+      if (patch.phone !== undefined) dbPatch.phone = patch.phone.trim();
+      const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
+      if (reportIfError(error, "עדכון הפרטים")) return;
+      showToast("הפרטים עודכנו בהצלחה");
+    })();
+  }, [reportIfError, showToast]);
+
+  const removeMember: TaskStoreValue["removeMember"] = useCallback((id) => {
+    (async () => {
+      const removedName = findMember(id)?.name ?? "";
       // assignee_ids is a plain array column now (no FK cascade), so we clean it
       // up ourselves: drop this person from any shared task, and delete tasks
       // that would be left with no assignee at all.
-      const { data: affected } = await supabase
+      const { data: affected, error: fetchError } = await supabase
         .from("tasks")
         .select("id, assignee_ids")
         .contains("assignee_ids", [id]);
+      if (reportIfError(fetchError, "הסרת החייל/ת")) return;
 
       if (affected) {
         for (const row of affected as { id: string; assignee_ids: string[] }[]) {
@@ -353,18 +425,22 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      await supabase.from("team_members").delete().eq("id", id);
+      const { error } = await supabase.from("team_members").delete().eq("id", id);
+      if (reportIfError(error, "הסרת החייל/ת")) return;
+      showToast(`${removedName} הוסר/ה מהצוות`);
     })();
-  };
+  }, [findMember, reportIfError, showToast]);
 
   const tasks = useMemo<Task[]>(
     () => rawTasks.map((t) => ({ ...t, comments: commentsByTask[t.id] ?? [] })),
     [rawTasks, commentsByTask]
   );
 
+  // Every action function above is now stable (useCallback + refs for live data),
+  // so this only needs to change when the actual DATA changes — not on every render.
   const value = useMemo(
-    () => ({ loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment, addMember, removeMember }),
-    [loading, tasks, activity, team]
+    () => ({ loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment, addMember, updateMember, removeMember }),
+    [loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment, addMember, updateMember, removeMember]
   );
 
   return <TaskStoreContext.Provider value={value}>{children}</TaskStoreContext.Provider>;
