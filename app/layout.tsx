@@ -1,9 +1,24 @@
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Providers } from "./providers"; 
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Task PWA",
+  description: "Task Management App",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="he" dir="rtl">
-      <body>
+      <body className={inter.className}>
         <Providers>
-          {/* ודא שכל רכיב אפליקטיבי (כמו Navbar/Sidebar) נמצא אך ורק כאן, בפנים! */}
           {children}
         </Providers>
       </body>
