@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "media", // follows the phone's system setting automatically
+  darkMode: "class", // user-controlled via Settings (see lib/theme.ts) — "dark" class on <html>, defaults to system preference
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   // Avatar gradient colors come from the database at runtime (team_members.color_from/color_to),
   // so Tailwind can never "see" them in scanned source — without this safelist those classes

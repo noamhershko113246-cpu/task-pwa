@@ -3,9 +3,9 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays } from "lucide-react";
+import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2 } from "lucide-react";
 import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
-import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc } from "@/lib/utils";
+import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import ProgressRing from "@/components/ProgressRing";
@@ -16,8 +16,6 @@ import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
 import ActivityTimeline from "@/components/ActivityTimeline";
 import CreateTaskSheet from "@/components/CreateTaskSheet";
-import QuickAddBar from "@/components/QuickAddBar";
-import { useKeyboardShortcuts } from "@/lib/useKeyboardShortcuts";
 import TaskDetailSheet from "@/components/TaskDetailSheet";
 import RoleBadge from "@/components/RoleBadge";
 import SearchBar from "@/components/SearchBar";
@@ -25,6 +23,8 @@ import PriorityFilter from "@/components/PriorityFilter";
 import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import AITriageSheet from "@/components/AITriageSheet";
+import ProductivityWrapped from "@/components/ProductivityWrapped";
 import clsx from "clsx";
 
 function ManagerDashboardInner() {
@@ -32,6 +32,7 @@ function ManagerDashboardInner() {
   const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment } = useTaskStore();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [triageOpen, setTriageOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -66,9 +67,10 @@ function ManagerDashboardInner() {
     () => visibleTasks.filter((t) => isToday(t.deadline) || (t.status === "done" && t.completedAt && isToday(t.completedAt))),
     [visibleTasks]
   );
-  const todaysDoneCount = todaysTasks.filter((t) => t.status === "done").length;
-  const todaysTotalCount = todaysTasks.length;
-  const overallPercent = todaysTotalCount ? (todaysDoneCount / todaysTotalCount) * 100 : 0;
+  const todaysActiveTasks = activeTasks(todaysTasks);
+  const todaysDoneCount = todaysActiveTasks.filter((t) => t.status === "done").length;
+  const todaysTotalCount = todaysActiveTasks.length;
+  const overallPercent = completionPercent(todaysTasks);
 
   const overdueTasks = useMemo(
     () => visibleTasks.filter((t) => isOverdue(t.deadline, t.status)),
@@ -90,34 +92,25 @@ function ManagerDashboardInner() {
     return [...results].sort(compareByDeadlineDesc);
   }, [visibleTasks, query, priorityFilter, isFiltering]);
 
-  useKeyboardShortcuts({
-    onNew: () => document.getElementById("quick-add-input")?.focus(),
-    onSearch: () => document.getElementById("task-search-input")?.focus(),
-    onEscape: () => {
-      setSheetOpen(false);
-      setDetailTask(null);
-    },
-    navBase: "manager",
-  });
-
   if (loading || !me) return <LoadingScreen />;
 
   // everyone ranked below me — a regular manager sees soldiers; a super-manager also sees other managers
   const myRank = memberRank(me);
   const managed = team.filter((m) => m.id !== me.id && memberRank(m) < myRank).map((m) => {
     const mine = tasks.filter((t) => t.assigneeIds.includes(m.id));
-    const done = mine.filter((t) => t.status === "done").length;
+    const mineActive = activeTasks(mine);
     return {
       member: m,
-      total: mine.length,
-      percent: mine.length ? (done / mine.length) * 100 : 0,
+      total: mineActive.length,
+      percent: completionPercent(mine),
     };
   });
 
   const myTasks = tasks.filter((t) => t.assigneeIds.includes(me.id));
-  const myOpenCount = myTasks.filter((t) => t.status !== "done").length;
-  const myDoneCount = myTasks.filter((t) => t.status === "done").length;
-  const myPercent = myTasks.length ? (myDoneCount / myTasks.length) * 100 : 0;
+  const myActiveTasks = activeTasks(myTasks);
+  const myOpenCount = myTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length;
+  const myDoneCount = myActiveTasks.filter((t) => t.status === "done").length;
+  const myPercent = completionPercent(myTasks);
 
   const handleLogout = () => {
     clearSession();
@@ -130,6 +123,14 @@ function ManagerDashboardInner() {
         <AppHeader title="לוח פיקוד" subtitle={`שלום ${me.name},`} />
         <div className="flex shrink-0 items-center gap-2">
           <NotificationBell userId={me.id} />
+          <button
+            onClick={() => setTriageOpen(true)}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
+            aria-label="טריאז׳ חכם"
+            title="טריאז׳ חכם"
+          >
+            <Wand2 size={16} />
+          </button>
           <Link
             href="/manager/team"
             className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
@@ -175,19 +176,6 @@ function ManagerDashboardInner() {
       <div className="mb-5">
         <PriorityFilter selected={priorityFilter} onChange={setPriorityFilter} />
       </div>
-
-      {!isFiltering && (
-        <div className="mb-5">
-          <QuickAddBar
-            placeholder="הוספה מהירה לעצמך — הקלידו ולחצו Enter..."
-            onAdd={(title) =>
-              createTasks([
-                { title, description: "", assigneeIds: [me.id], priority: 3, deadline: null, createdBy: me.id },
-              ])
-            }
-          />
-        </div>
-      )}
 
       {!isFiltering && (
         <div className="mb-5 grid grid-cols-2 gap-3">
@@ -257,12 +245,14 @@ function ManagerDashboardInner() {
             </div>
           </section>
 
+          <ProductivityWrapped tasks={visibleTasks} />
+
           {/* Managed people's rings — tap to view and update their tasks */}
-          <section className="mb-8">
+          <section className="mb-5">
             <p className="mb-3 px-1 text-sm font-bold text-ink dark:text-ink-dark">
               {me.isSuperManager ? "התקדמות לפי איש/אשת משרד" : "התקדמות לפי חייל/ת"}
             </p>
-            <div className="flex gap-3 overflow-x-auto overscroll-x-contain pb-1">
+            <div className="flex gap-3 overflow-x-auto pb-1">
               {managed.map(({ member, percent, total }) => (
                 <Link
                   key={member.id}
@@ -279,7 +269,6 @@ function ManagerDashboardInner() {
               ))}
             </div>
           </section>
-
 
           {/* Overdue — gentle pulsing red flags, tap to edit */}
           {overdueTasks.length > 0 && (
@@ -329,7 +318,7 @@ function ManagerDashboardInner() {
       {/* Floating create-task button, sitting above the bottom nav */}
       <button
         onClick={() => setSheetOpen(true)}
-        className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+        className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
       >
         <Plus size={20} strokeWidth={2.5} />
         משימה חדשה
@@ -351,6 +340,17 @@ function ManagerDashboardInner() {
         onUpdate={updateTask}
         onDelete={deleteTask}
         onAddComment={addComment}
+      />
+
+      <AITriageSheet
+        open={triageOpen}
+        tasks={visibleTasks}
+        team={team}
+        onClose={() => setTriageOpen(false)}
+        onOpenDetail={(task) => {
+          setTriageOpen(false);
+          setDetailTask(task);
+        }}
       />
 
       <BottomNav base="manager" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion, PanInfo } from "framer-motion";
+import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
 import { X, Trash2, Send, Repeat, AlertTriangle, XCircle } from "lucide-react";
 import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS } from "@/lib/types";
 import { timeAgoHebrew, toDatetimeLocalValue } from "@/lib/utils";
@@ -39,6 +39,7 @@ export default function TaskDetailSheet({
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const dragControls = useDragControls();
 
   useEffect(() => {
     if (task) {
@@ -121,12 +122,17 @@ export default function TaskDetailSheet({
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
             drag="y"
+            dragListener={false}
+            dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
-            <div className="flex justify-center pb-3">
+            <div
+              onPointerDown={(e) => dragControls.start(e)}
+              className="flex cursor-grab justify-center pb-3 active:cursor-grabbing"
+            >
               <div className="bottom-sheet-handle" />
             </div>
 

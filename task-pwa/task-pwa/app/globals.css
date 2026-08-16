@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  direction: rtl;
+}
+
+body {
+  @apply bg-slate-100 text-ink dark:bg-zinc-950 dark:text-ink-dark;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+  min-height: 100dvh;
+}
+
+/* On mobile the "app" IS the whole screen, so it uses the same background as body.
+   On desktop, each page's own <main> switches to the surface color and becomes a
+   centered, framed card — see the md: classes added directly on each page. */
+@media (max-width: 767px) {
+  body {
+    @apply bg-surface dark:bg-surface-dark;
+  }
+}
+
+/* Respect reduced-motion preferences across the app */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* visible keyboard focus, always */
+:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { @apply bg-zinc-300 dark:bg-zinc-700 rounded-full; }
+
+.bottom-sheet-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 999px;
+  @apply bg-zinc-300 dark:bg-zinc-600;
+}

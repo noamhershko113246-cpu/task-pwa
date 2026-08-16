@@ -15,7 +15,6 @@ export default function SearchBar({
     <div className="relative">
       <Search size={17} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />
       <input
-        id="task-search-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

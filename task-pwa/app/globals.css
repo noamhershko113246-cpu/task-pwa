@@ -48,3 +48,13 @@ body {
   border-radius: 999px;
   @apply bg-zinc-300 dark:bg-zinc-600;
 }
+
+/* Bottom sheets (CreateTaskSheet, TaskDetailSheet): lock scrolling to the vertical
+   axis only, so the sheet can never register as horizontally scrollable (which is
+   what caused the side-to-side "shake" on mobile), and get native momentum scrolling. */
+.sheet-scroll {
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}

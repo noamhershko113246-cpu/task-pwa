@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AnimatePresence, motion, PanInfo } from "framer-motion";
+import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
 import { X, Repeat } from "lucide-react";
 import { TeamMember, Task, Priority, PRIORITY_COLORS } from "@/lib/types";
 import { generateRecurringDates, WEEKDAY_LETTERS } from "@/lib/utils";
@@ -28,6 +28,7 @@ export default function CreateTaskSheet({
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
   const [recurrenceEnd, setRecurrenceEnd] = useState("");
   const [priority, setPriority] = useState<Priority>(3);
+  const dragControls = useDragControls();
 
   const assignable = team;
 
@@ -111,12 +112,17 @@ export default function CreateTaskSheet({
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
             drag="y"
+            dragListener={false}
+            dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[88vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[88vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
-            <div className="flex justify-center pb-3">
+            <div
+              onPointerDown={(e) => dragControls.start(e)}
+              className="flex cursor-grab justify-center pb-3 active:cursor-grabbing"
+            >
               <div className="bottom-sheet-handle" />
             </div>
 

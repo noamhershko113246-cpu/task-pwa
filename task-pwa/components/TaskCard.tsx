@@ -8,11 +8,10 @@ import { formatDeadline, isOverdue } from "@/lib/utils";
 import { useConfetti } from "@/hooks/useConfetti";
 import PriorityBadge from "./PriorityBadge";
 import clsx from "clsx";
-import { memo } from "react";
 
 const SWIPE_THRESHOLD = 110;
 
-function TaskCardImpl({
+export default function TaskCard({
   task,
   creatorName,
   onComplete,
@@ -122,21 +121,3 @@ function TaskCardImpl({
     </div>
   );
 }
-
-export default memo(TaskCardImpl, (prev, next) => {
-  const a = prev.task;
-  const b = next.task;
-  // Reference equality won't work here: the store rebuilds the whole tasks
-  // array via .map() on every change, so every task gets a new object
-  // identity even when ITS data didn't change. Compare the actual fields
-  // this component renders instead.
-  return (
-    a.id === b.id &&
-    a.title === b.title &&
-    a.description === b.description &&
-    a.status === b.status &&
-    a.priority === b.priority &&
-    a.deadline === b.deadline &&
-    prev.creatorName === next.creatorName
-  );
-});

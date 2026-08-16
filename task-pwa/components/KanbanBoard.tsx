@@ -18,7 +18,6 @@ import { formatDeadline, isOverdue } from "@/lib/utils";
 import PriorityBadge from "./PriorityBadge";
 import Avatar from "./Avatar";
 import clsx from "clsx";
-import { memo } from "react";
 
 const COLUMNS: TaskStatus[] = ["todo", "in_progress", "stuck", "done"];
 
@@ -30,7 +29,7 @@ const COLUMN_STYLES: Record<TaskStatus, { header: string; dot: string }> = {
   cancelled: { header: "text-zinc-400", dot: "bg-zinc-400" },
 };
 
-function KanbanCardImpl({
+function KanbanCard({
   task,
   assignees,
   onOpenDetail,
@@ -74,20 +73,6 @@ function KanbanCardImpl({
     </div>
   );
 }
-
-const KanbanCard = memo(KanbanCardImpl, (prev, next) => {
-  const a = prev.task;
-  const b = next.task;
-  const sameAssignees = prev.assignees.map((m) => m.id).join(",") === next.assignees.map((m) => m.id).join(",");
-  return (
-    a.id === b.id &&
-    a.title === b.title &&
-    a.status === b.status &&
-    a.priority === b.priority &&
-    a.deadline === b.deadline &&
-    sameAssignees
-  );
-});
 
 function KanbanColumn({
   status,
@@ -173,7 +158,7 @@ export default function KanbanBoard({
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2">
+      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
         {COLUMNS.map((status) => (
           <KanbanColumn
             key={status}

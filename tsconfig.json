@@ -21,7 +21,7 @@
     "node_modules",
     "supabase",
     "supabase/**/*",
-    "task-pwa/supabase",
-    "task-pwa/supabase/**/*"
+    "task-pwa",
+    "task-pwa/**/*"
   ]
 }

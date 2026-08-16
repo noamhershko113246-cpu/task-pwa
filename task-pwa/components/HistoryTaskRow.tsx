@@ -4,9 +4,8 @@ import StatusBadge from "./StatusBadge";
 import Avatar from "./Avatar";
 import PriorityBadge from "./PriorityBadge";
 import { Calendar } from "lucide-react";
-import { memo } from "react";
 
-function HistoryTaskRowImpl({
+export default function HistoryTaskRow({
   task,
   assignees,
   dateLabel,
@@ -51,20 +50,3 @@ function HistoryTaskRowImpl({
     </div>
   );
 }
-
-export default memo(HistoryTaskRowImpl, (prev, next) => {
-  const a = prev.task;
-  const b = next.task;
-  const sameAssignees =
-    (prev.assignees?.map((m) => m.id).join(",") ?? "") === (next.assignees?.map((m) => m.id).join(",") ?? "");
-  return (
-    a.id === b.id &&
-    a.title === b.title &&
-    a.description === b.description &&
-    a.status === b.status &&
-    a.priority === b.priority &&
-    a.deadline === b.deadline &&
-    prev.dateLabel === next.dateLabel &&
-    sameAssignees
-  );
-});
