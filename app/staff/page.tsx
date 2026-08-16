@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2 } from "lucide-react";
+import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2, Settings } from "lucide-react";
 import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
+import { resolveBackgroundLayer } from "@/lib/backgroundPresets";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import TaskCard from "@/components/TaskCard";
@@ -19,6 +20,7 @@ import TaskDetailSheet from "@/components/TaskDetailSheet";
 import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import SettingsSheet from "@/components/SettingsSheet";
 import AITriageSheet from "@/components/AITriageSheet";
 import ProductivityWrapped from "@/components/ProductivityWrapped";
 
@@ -65,6 +67,7 @@ function StaffDashboardInner() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [undoTask, setUndoTask] = useState<{ id: string; title: string } | null>(null);
   const [triageOpen, setTriageOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openTasks = useMemo(() => {
@@ -112,7 +115,14 @@ function StaffDashboardInner() {
   };
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main
+      className="mx-auto min-h-dvh max-w-md bg-cover bg-center bg-fixed px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark"
+      style={
+        resolveBackgroundLayer(member)
+          ? { backgroundImage: `linear-gradient(var(--bg-scrim), var(--bg-scrim)), ${resolveBackgroundLayer(member)}` }
+          : undefined
+      }
+    >
       <header className="mb-3 flex items-center justify-between">
         <AppHeader title={member.name} subtitle={viewingAsManager ? "צופה/ת במשימות של" : "שלום,"} />
         {backHref ? (
@@ -126,6 +136,14 @@ function StaffDashboardInner() {
         ) : (
           <div className="flex shrink-0 items-center gap-2">
             <NotificationBell userId={member.id} />
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+              aria-label="הגדרות"
+              title="הגדרות"
+            >
+              <Settings size={16} className="text-ink-soft" />
+            </button>
             <button
               onClick={() => setTriageOpen(true)}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
@@ -254,6 +272,8 @@ function StaffDashboardInner() {
           setDetailTask(task);
         }}
       />
+
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} member={member} />
 
       <BottomNav base="staff" />
     </main>

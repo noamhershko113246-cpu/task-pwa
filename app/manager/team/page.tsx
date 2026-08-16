@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, UserPlus, Trash2, Phone, AlertTriangle } from "lucide-react";
+import { ChevronRight, UserPlus, Trash2, AlertTriangle } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import AppHeader from "@/components/AppHeader";
@@ -15,7 +15,6 @@ export default function TeamManagementPage() {
   const router = useRouter();
   const { team, tasks, loading, addMember, removeMember } = useTaskStore();
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
 
@@ -39,22 +38,17 @@ export default function TeamManagementPage() {
 
   const handleAdd = () => {
     setError("");
-    if (!name.trim() || !phone.trim()) {
-      setError("יש למלא שם ומספר טלפון");
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("יש למלא שם");
       return;
     }
-    const digits = phone.replace(/[^\d]/g, "");
-    if (digits.length < 9) {
-      setError("מספר הטלפון לא תקין");
+    if (team.some((m) => m.name.trim() === trimmedName)) {
+      setError("כבר יש איש/אשת צוות עם השם הזה — לכניסה עם שם צריך שם ייחודי");
       return;
     }
-    if (team.some((m) => m.phone.replace(/[^\d]/g, "") === digits)) {
-      setError("מספר הטלפון הזה כבר קיים במערכת");
-      return;
-    }
-    addMember(name.trim(), phone.trim());
+    addMember(trimmedName);
     setName("");
-    setPhone("");
   };
 
   const handleRemove = (id: string) => {
@@ -87,20 +81,10 @@ export default function TeamManagementPage() {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="שם מלא"
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="שם מלא (זה גם מה שישמש להתחברות)"
             className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
           />
-          <div className="relative">
-            <Phone size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              placeholder="מספר טלפון (05X-XXXXXXX)"
-              inputMode="numeric"
-              className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 py-3 pr-11 pl-4 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
-            />
-          </div>
           {error && <p className="text-sm font-medium text-rose-500">{error}</p>}
           <button
             onClick={handleAdd}
@@ -129,8 +113,8 @@ export default function TeamManagementPage() {
                     <p className="truncate text-sm font-bold text-ink dark:text-ink-dark">{member.name}</p>
                     <RoleBadge member={member} />
                   </div>
-                  <p className="mt-0.5 text-xs text-ink-soft dark:text-ink-dark-soft" dir="ltr">
-                    {member.phone} · {taskCountFor(member.id)} משימות
+                  <p className="mt-0.5 text-xs text-ink-soft dark:text-ink-dark-soft">
+                    {taskCountFor(member.id)} משימות
                   </p>
                 </div>
                 {confirmingRemoveId !== member.id && (

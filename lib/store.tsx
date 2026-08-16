@@ -28,6 +28,15 @@ interface TeamRow {
   is_super_manager: boolean;
   phone: string;
   login_keyword: string | null;
+  daily_summary_enabled: boolean;
+  daily_summary_time: string | null;
+  daily_summary_scope: "all" | "due_soon";
+  background_url: string | null;
+  background_preset: string | null;
+  working_hours_enabled: boolean;
+  working_hours_start: string | null;
+  working_hours_end: string | null;
+  overdue_reminder_interval_minutes: number;
 }
 
 interface TaskRow {
@@ -73,6 +82,15 @@ function memberFromRow(r: TeamRow): TeamMember {
     isSuperManager: r.is_super_manager,
     phone: r.phone,
     loginKeyword: r.login_keyword ?? undefined,
+    dailySummaryEnabled: r.daily_summary_enabled,
+    dailySummaryTime: r.daily_summary_time,
+    dailySummaryScope: r.daily_summary_scope,
+    backgroundUrl: r.background_url,
+    backgroundPreset: r.background_preset,
+    workingHoursEnabled: r.working_hours_enabled,
+    workingHoursStart: r.working_hours_start,
+    workingHoursEnd: r.working_hours_end,
+    overdueReminderIntervalMinutes: r.overdue_reminder_interval_minutes,
   };
 }
 
@@ -110,8 +128,23 @@ interface TaskStoreValue {
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string, scope: "one" | "series") => void;
   addComment: (taskId: string, userId: string, text: string) => void;
-  addMember: (name: string, phone: string) => void;
-  updateMember: (id: string, patch: { name?: string; phone?: string }) => void;
+  addMember: (name: string) => void;
+  updateMember: (
+    id: string,
+    patch: {
+      name?: string;
+      phone?: string;
+      dailySummaryEnabled?: boolean;
+      dailySummaryTime?: string | null;
+      dailySummaryScope?: "all" | "due_soon";
+      backgroundUrl?: string | null;
+      backgroundPreset?: string | null;
+      workingHoursEnabled?: boolean;
+      workingHoursStart?: string | null;
+      workingHoursEnd?: string | null;
+      overdueReminderIntervalMinutes?: number;
+    }
+  ) => void;
   removeMember: (id: string) => void;
 }
 
@@ -389,18 +422,23 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [findMember, logActivity, sendPush, reportIfError]);
 
-  const addMember: TaskStoreValue["addMember"] = useCallback((name, phone) => {
+  const addMember: TaskStoreValue["addMember"] = useCallback((name) => {
     (async () => {
+      const trimmedName = name.trim();
       const [colorFrom, colorTo] = AVATAR_COLORS[teamRef.current.length % AVATAR_COLORS.length];
+      // Login is by name only now (no phone/SMS-code flow) — login_keyword is
+      // what actually authenticates; `phone` is kept only because the column
+      // is NOT NULL, filled with a placeholder that can never match a login.
       const { error } = await supabase.from("team_members").insert({
-        name: name.trim(),
-        initials: name.trim().slice(0, 2),
+        name: trimmedName,
+        initials: trimmedName.slice(0, 2),
         color_from: colorFrom,
         color_to: colorTo,
-        phone,
+        phone: `no-phone-login-${Date.now()}`,
+        login_keyword: trimmedName,
       });
       if (reportIfError(error, "הוספת החייל/ת")) return;
-      showToast(`${name.trim()} נוסף/ה בהצלחה לצוות`);
+      showToast(`${trimmedName} נוסף/ה בהצלחה לצוות`);
     })();
   }, [reportIfError, showToast]);
 
@@ -412,9 +450,21 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         dbPatch.initials = patch.name.trim().slice(0, 2);
       }
       if (patch.phone !== undefined) dbPatch.phone = patch.phone.trim();
+      if (patch.dailySummaryEnabled !== undefined) dbPatch.daily_summary_enabled = patch.dailySummaryEnabled;
+      if (patch.dailySummaryTime !== undefined) dbPatch.daily_summary_time = patch.dailySummaryTime;
+      if (patch.dailySummaryScope !== undefined) dbPatch.daily_summary_scope = patch.dailySummaryScope;
+      if (patch.backgroundUrl !== undefined) dbPatch.background_url = patch.backgroundUrl;
+      if (patch.backgroundPreset !== undefined) dbPatch.background_preset = patch.backgroundPreset;
+      if (patch.workingHoursEnabled !== undefined) dbPatch.working_hours_enabled = patch.workingHoursEnabled;
+      if (patch.workingHoursStart !== undefined) dbPatch.working_hours_start = patch.workingHoursStart;
+      if (patch.workingHoursEnd !== undefined) dbPatch.working_hours_end = patch.workingHoursEnd;
+      if (patch.overdueReminderIntervalMinutes !== undefined)
+        dbPatch.overdue_reminder_interval_minutes = patch.overdueReminderIntervalMinutes;
       const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון הפרטים")) return;
-      showToast("הפרטים עודכנו בהצלחה");
+      // Silent settings toggles (like the reminder popover) don't need their own
+      // toast — only show one when an actual name/phone edit happened.
+      if (patch.name !== undefined || patch.phone !== undefined) showToast("הפרטים עודכנו בהצלחה");
     })();
   }, [reportIfError, showToast]);
 

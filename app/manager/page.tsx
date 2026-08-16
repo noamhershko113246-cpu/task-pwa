@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2 } from "lucide-react";
+import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2, Settings } from "lucide-react";
 import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
+import { resolveBackgroundLayer } from "@/lib/backgroundPresets";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -23,6 +24,7 @@ import PriorityFilter from "@/components/PriorityFilter";
 import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import SettingsSheet from "@/components/SettingsSheet";
 import AITriageSheet from "@/components/AITriageSheet";
 import ProductivityWrapped from "@/components/ProductivityWrapped";
 import clsx from "clsx";
@@ -33,6 +35,7 @@ function ManagerDashboardInner() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [triageOpen, setTriageOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -118,11 +121,26 @@ function ManagerDashboardInner() {
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main
+      className="relative mx-auto min-h-dvh max-w-md bg-cover bg-center bg-fixed px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark"
+      style={
+        resolveBackgroundLayer(me)
+          ? { backgroundImage: `linear-gradient(var(--bg-scrim), var(--bg-scrim)), ${resolveBackgroundLayer(me)}` }
+          : undefined
+      }
+    >
       <header className="mb-3 flex items-center justify-between">
         <AppHeader title="לוח פיקוד" subtitle={`שלום ${me.name},`} />
         <div className="flex shrink-0 items-center gap-2">
           <NotificationBell userId={me.id} />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+            aria-label="הגדרות"
+            title="הגדרות"
+          >
+            <Settings size={16} className="text-ink-soft" />
+          </button>
           <button
             onClick={() => setTriageOpen(true)}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
@@ -352,6 +370,8 @@ function ManagerDashboardInner() {
           setDetailTask(task);
         }}
       />
+
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} member={me} />
 
       <BottomNav base="manager" />
     </main>
