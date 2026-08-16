@@ -237,13 +237,29 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   const sendPush = useCallback((userIds: string[], title: string, body: string, url?: string) => {
     if (userIds.length === 0) return;
+    // Push is best-effort — a failure here should never break the app or show
+    // the user an error toast. But it used to fail 100% silently (no console
+    // output, nowhere to look), which made real problems undiagnosable. Now
+    // every failure mode is at least logged to the console.
     fetch("/api/push/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIds, title, body, url }),
-    }).catch(() => {
-      // push is best-effort — a failed send should never break the app (and doesn't need its own error toast)
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          console.error(`[push] send failed (HTTP ${res.status}): ${errText}`);
+          return;
+        }
+        const data = await res.json().catch(() => null as { sent?: number; failed?: number } | null);
+        if (data?.failed) {
+          console.error(`[push] ${data.failed} of ${(data.sent ?? 0) + data.failed} notifications failed to deliver`, data);
+        }
+      })
+      .catch((err) => {
+        console.error("[push] request to /api/push/send failed:", err);
+      });
   }, []);
 
   const createTasks: TaskStoreValue["createTasks"] = useCallback((newTasks) => {
