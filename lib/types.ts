@@ -28,6 +28,15 @@ export interface TeamMember {
   isSuperManager?: boolean; // manages the manager(s) too — sees/edits literally everyone
   phone: string; // used for phone-number login — each person signs into their own account only
   loginKeyword?: string; // special-case login (e.g. a name typed instead of a phone number)
+  dailySummaryEnabled?: boolean; // opt-in daily push reminder about open tasks
+  dailySummaryTime?: string | null; // "HH:MM" 24h, Asia/Jerusalem local time
+  dailySummaryScope?: "all" | "due_soon"; // which open tasks count toward the reminder
+  backgroundUrl?: string | null; // custom app-background image (Supabase Storage "backgrounds" bucket), null = default
+  backgroundPreset?: string | null; // key into BACKGROUND_PRESETS (lib/backgroundPresets.ts); ignored if backgroundUrl is set
+  workingHoursEnabled?: boolean; // opt-in: hold deadline reminders outside this window (Sun–Thu)
+  workingHoursStart?: string | null; // "HH:MM" 24h, Asia/Jerusalem local time
+  workingHoursEnd?: string | null; // "HH:MM" 24h, Asia/Jerusalem local time
+  overdueReminderIntervalMinutes?: number; // how often a still-open overdue task re-pings this person; 1440 = once a day
 }
 
 /** Access tier used to decide who can view/edit whose tasks. Higher outranks lower. */
