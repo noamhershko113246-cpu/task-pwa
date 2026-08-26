@@ -96,8 +96,10 @@ export function generateRecurringDates(
   return dates;
 }
 
-/** Groups a month's tasks by assignee (category = team member), in team order, dropping empty categories. */
-export function groupTasksByMemberInMonth<T extends { deadline: string | null; assigneeIds: string[] }>(
+/** Groups a month's COMPLETED tasks by assignee (category = team member), in team order, dropping empty categories.
+ *  "Month" here means the month the task was completed, not its deadline — this is task *history*, so it reflects
+ *  when the work actually happened. Tasks without a completedAt (not done, or reopened) are excluded entirely. */
+export function groupTasksByMemberInMonth<T extends { completedAt?: string; assigneeIds: string[] }>(
   tasks: T[],
   monthDate: Date,
   team: TeamMember[]
@@ -106,8 +108,8 @@ export function groupTasksByMemberInMonth<T extends { deadline: string | null; a
   const month = monthDate.getMonth();
 
   const inMonth = tasks.filter((t) => {
-    if (!t.deadline) return false;
-    const d = new Date(t.deadline);
+    if (!t.completedAt) return false;
+    const d = new Date(t.completedAt);
     return d.getFullYear() === year && d.getMonth() === month;
   });
 
@@ -116,7 +118,7 @@ export function groupTasksByMemberInMonth<T extends { deadline: string | null; a
       member,
       items: inMonth
         .filter((t) => t.assigneeIds.includes(member.id))
-        .sort((a, b) => ((a.deadline as string) < (b.deadline as string) ? 1 : -1)),
+        .sort((a, b) => ((a.completedAt as string) < (b.completedAt as string) ? 1 : -1)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -137,12 +139,30 @@ export function formatDeadline(iso: string | null): string {
   return `${datePart}, ${timePart}`;
 }
 
+/** Same formatting as formatDeadline, but for a task's completion timestamp — used in task history, which is now
+ *  organized by completion date rather than deadline. */
+export function formatCompletedAt(iso: string | null | undefined): string {
+  if (!iso) return "לא הושלמה";
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
+  const timePart = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  return `${datePart}, ${timePart}`;
+}
+
 /** Sorts by deadline descending (latest first); tasks with no deadline always sort last. */
 export function compareByDeadlineDesc(a: { deadline: string | null }, b: { deadline: string | null }): number {
   if (!a.deadline && !b.deadline) return 0;
   if (!a.deadline) return 1;
   if (!b.deadline) return -1;
   return a.deadline < b.deadline ? 1 : -1;
+}
+
+/** Sorts by completion date descending (most recently completed first); tasks with no completedAt always sort last. */
+export function compareByCompletedAtDesc(a: { completedAt?: string }, b: { completedAt?: string }): number {
+  if (!a.completedAt && !b.completedAt) return 0;
+  if (!a.completedAt) return 1;
+  if (!b.completedAt) return -1;
+  return a.completedAt < b.completedAt ? 1 : -1;
 }
 
 /** Tasks that still count toward completion metrics — cancelled tasks are excluded entirely. */
@@ -167,8 +187,10 @@ export function monthLabel(date: Date): string {
   return date.toLocaleDateString("he-IL", { month: "long", year: "numeric" });
 }
 
-/** Returns tasks whose deadline falls within the given month/year, grouped by day (desc). */
-export function groupTasksByDayInMonth<T extends { deadline: string | null }>(
+/** Returns COMPLETED tasks whose completedAt falls within the given month/year, grouped by the day they were
+ *  completed (desc). This is task *history* — it reflects when work actually finished, not when it was due.
+ *  Tasks without a completedAt (not done, or reopened after being done) are excluded entirely. */
+export function groupTasksByDayInMonth<T extends { completedAt?: string }>(
   tasks: T[],
   monthDate: Date
 ): { dateIso: string; items: T[] }[] {
@@ -176,14 +198,14 @@ export function groupTasksByDayInMonth<T extends { deadline: string | null }>(
   const month = monthDate.getMonth();
 
   const inMonth = tasks.filter((t) => {
-    if (!t.deadline) return false;
-    const d = new Date(t.deadline);
+    if (!t.completedAt) return false;
+    const d = new Date(t.completedAt);
     return d.getFullYear() === year && d.getMonth() === month;
   });
 
   const groups = new Map<string, T[]>();
   for (const task of inMonth) {
-    const key = localDateKey(task.deadline as string);
+    const key = localDateKey(task.completedAt as string);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(task);
   }

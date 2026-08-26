@@ -18,6 +18,9 @@ export const PRIORITY_COLORS: Record<Priority, { bg: string; fg: string; label: 
   5: { bg: "#dcfce7", fg: "#15803d", label: "אפשר להמתין" },
 };
 
+/** Every existing member predates the department field, so this is what "unset" means: the original HR team. */
+export const DEFAULT_DEPARTMENT = 'משא"ן';
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -37,6 +40,11 @@ export interface TeamMember {
   workingHoursStart?: string | null; // "HH:MM" 24h, Asia/Jerusalem local time
   workingHoursEnd?: string | null; // "HH:MM" 24h, Asia/Jerusalem local time
   overdueReminderIntervalMinutes?: number; // how often a still-open overdue task re-pings this person; 1440 = once a day
+  managerId?: string | null; // direct manager's id; null/unset = visible to every manager (pre-existing default). A super-manager always sees everyone regardless of this.
+  canAddMembers?: boolean; // narrow permission: lets a non-manager add new team members from the app, without granting manager-level visibility into anyone else's tasks
+  department?: string; // e.g. 'משא"ן' (HR, the original/default team) or 'טנ"א' (Maintenance) — isolates each unit's people and tasks from every other unit
+  brigade?: string | null; // display-only sub-unit, e.g. "חטיבה 14" — does not affect visibility, department is what isolates
+  isSuperAdmin?: boolean; // system-wide override: bypasses department isolation AND rank entirely — sees/manages every unit, every rank, no exceptions. Distinct from isSuperManager (which is scoped to one department).
 }
 
 /** Access tier used to decide who can view/edit whose tasks. Higher outranks lower. */
@@ -48,14 +56,35 @@ export function memberRank(m: Pick<TeamMember, "isManager" | "isSuperManager">):
 
 /**
  * The set of people a given viewer may assign tasks to and see the tasks of:
- * themselves, plus everyone ranked strictly below them.
- *   - super-manager (קמשא) → everyone
- *   - manager (מפקדת) → herself + soldiers (not other managers/super-managers)
+ * themselves, plus everyone ranked strictly below them who reports to her,
+ * within her own department/unit.
+ *   - super-admin (isSuperAdmin) → the entire team, full stop. No department
+ *     wall, no rank ceiling — this is the one tier that spans every unit.
+ *   - department (משא"ן / טנ"א / ...) → otherwise a hard wall first: nobody outside the
+ *     viewer's own department is ever visible, super-manager included. Each
+ *     unit is its own isolated workspace. Unset department = DEFAULT_DEPARTMENT,
+ *     so every member who predates this field keeps exactly today's behavior.
+ *   - super-manager (קמשא) → everyone in her department, regardless of managerId
+ *   - manager (מפקדת) → herself + soldiers ranked below her, in her department,
+ *     whose managerId is either unset (visible to every manager in the
+ *     department — the pre-existing default, so nobody who already existed
+ *     before managerId was introduced changes visibility) or equals her own id
+ *     (assigned specifically to her)
  *   - soldier (חייל/ת) → only themselves
  */
 export function getVisibleScope(viewer: TeamMember, team: TeamMember[]): TeamMember[] {
+  if (viewer.isSuperAdmin) return team;
   const myRank = memberRank(viewer);
-  return team.filter((m) => m.id === viewer.id || memberRank(m) < myRank);
+  const myDept = viewer.department ?? DEFAULT_DEPARTMENT;
+  const sameDept = (m: TeamMember) => (m.department ?? DEFAULT_DEPARTMENT) === myDept;
+  if (viewer.isSuperManager) {
+    return team.filter((m) => m.id === viewer.id || (memberRank(m) < myRank && sameDept(m)));
+  }
+  return team.filter(
+    (m) =>
+      m.id === viewer.id ||
+      (memberRank(m) < myRank && sameDept(m) && (!m.managerId || m.managerId === viewer.id))
+  );
 }
 
 export interface Comment {

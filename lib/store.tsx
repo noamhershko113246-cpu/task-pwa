@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode, useRef } from "react";
-import { Task, ActivityEvent, TeamMember, Comment, TaskStatus, Priority, STATUS_LABELS } from "./types";
+import { Task, ActivityEvent, TeamMember, Comment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT } from "./types";
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
 
@@ -37,6 +37,11 @@ interface TeamRow {
   working_hours_start: string | null;
   working_hours_end: string | null;
   overdue_reminder_interval_minutes: number;
+  manager_id: string | null;
+  can_add_members: boolean;
+  department: string;
+  brigade: string | null;
+  is_super_admin: boolean;
 }
 
 interface TaskRow {
@@ -91,6 +96,11 @@ function memberFromRow(r: TeamRow): TeamMember {
     workingHoursStart: r.working_hours_start,
     workingHoursEnd: r.working_hours_end,
     overdueReminderIntervalMinutes: r.overdue_reminder_interval_minutes,
+    managerId: r.manager_id,
+    canAddMembers: r.can_add_members,
+    department: r.department,
+    brigade: r.brigade,
+    isSuperAdmin: r.is_super_admin,
   };
 }
 
@@ -128,7 +138,7 @@ interface TaskStoreValue {
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string, scope: "one" | "series") => void;
   addComment: (taskId: string, userId: string, text: string) => void;
-  addMember: (name: string) => void;
+  addMember: (name: string, department?: string, brigade?: string | null) => void;
   updateMember: (
     id: string,
     patch: {
@@ -143,6 +153,8 @@ interface TaskStoreValue {
       workingHoursStart?: string | null;
       workingHoursEnd?: string | null;
       overdueReminderIntervalMinutes?: number;
+      department?: string;
+      brigade?: string | null;
     }
   ) => void;
   removeMember: (id: string) => void;
@@ -422,13 +434,18 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [findMember, logActivity, sendPush, reportIfError]);
 
-  const addMember: TaskStoreValue["addMember"] = useCallback((name) => {
+  const addMember: TaskStoreValue["addMember"] = useCallback((name, department, brigade) => {
     (async () => {
       const trimmedName = name.trim();
       const [colorFrom, colorTo] = AVATAR_COLORS[teamRef.current.length % AVATAR_COLORS.length];
       // Login is by name only now (no phone/SMS-code flow) — login_keyword is
       // what actually authenticates; `phone` is kept only because the column
       // is NOT NULL, filled with a placeholder that can never match a login.
+      // department defaults to DEFAULT_DEPARTMENT (HR) so anyone adding a member
+      // without specifying a unit — the pre-existing flow — behaves exactly as
+      // before; callers within a specific department (e.g. Amit's team page)
+      // pass their own department/brigade so the new person lands in the same
+      // isolated unit as whoever added them.
       const { error } = await supabase.from("team_members").insert({
         name: trimmedName,
         initials: trimmedName.slice(0, 2),
@@ -436,6 +453,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         color_to: colorTo,
         phone: `no-phone-login-${Date.now()}`,
         login_keyword: trimmedName,
+        department: department ?? DEFAULT_DEPARTMENT,
+        brigade: brigade ?? null,
       });
       if (reportIfError(error, "הוספת החייל/ת")) return;
       showToast(`${trimmedName} נוסף/ה בהצלחה לצוות`);
@@ -460,6 +479,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (patch.workingHoursEnd !== undefined) dbPatch.working_hours_end = patch.workingHoursEnd;
       if (patch.overdueReminderIntervalMinutes !== undefined)
         dbPatch.overdue_reminder_interval_minutes = patch.overdueReminderIntervalMinutes;
+      if (patch.department !== undefined) dbPatch.department = patch.department;
+      if (patch.brigade !== undefined) dbPatch.brigade = patch.brigade;
       const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון הפרטים")) return;
       // Silent settings toggles (like the reminder popover) don't need their own

@@ -3,9 +3,8 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2, Settings } from "lucide-react";
+import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2, Settings, UserPlus } from "lucide-react";
 import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
-import { resolveBackgroundLayer } from "@/lib/backgroundPresets";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import TaskCard from "@/components/TaskCard";
@@ -21,6 +20,7 @@ import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
 import SettingsSheet from "@/components/SettingsSheet";
+import AppBackground from "@/components/AppBackground";
 import AITriageSheet from "@/components/AITriageSheet";
 import ProductivityWrapped from "@/components/ProductivityWrapped";
 
@@ -115,14 +115,8 @@ function StaffDashboardInner() {
   };
 
   return (
-    <main
-      className="mx-auto min-h-dvh max-w-md bg-cover bg-center bg-fixed px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark"
-      style={
-        resolveBackgroundLayer(member)
-          ? { backgroundImage: `linear-gradient(var(--bg-scrim), var(--bg-scrim)), ${resolveBackgroundLayer(member)}` }
-          : undefined
-      }
-    >
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+      <AppBackground member={member} />
       <header className="mb-3 flex items-center justify-between">
         <AppHeader title={member.name} subtitle={viewingAsManager ? "צופה/ת במשימות של" : "שלום,"} />
         {backHref ? (
@@ -160,6 +154,16 @@ function StaffDashboardInner() {
                 title="חזרה ללוח פיקוד"
               >
                 <ChevronRight size={18} className="text-ink-soft" />
+              </a>
+            )}
+            {!member.isManager && member.canAddMembers && (
+              <a
+                href="/manager/team"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+                aria-label="הוספת איש/אשת צוות"
+                title="הוספת איש/אשת צוות"
+              >
+                <UserPlus size={16} className="text-ink-soft" />
               </a>
             )}
             <button

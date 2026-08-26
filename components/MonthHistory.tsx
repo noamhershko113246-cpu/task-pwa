@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { CalendarX, SearchX } from "lucide-react";
 import { Task, TeamMember, Priority } from "@/lib/types";
-import { formatFullDate, groupTasksByDayInMonth, groupTasksByMemberInMonth, compareByDeadlineDesc } from "@/lib/utils";
+import { formatFullDate, groupTasksByDayInMonth, groupTasksByMemberInMonth, compareByCompletedAtDesc } from "@/lib/utils";
 import MonthSwitcher from "./MonthSwitcher";
 import HistoryTaskRow from "./HistoryTaskRow";
 import Avatar from "./Avatar";
@@ -37,9 +37,12 @@ export default function MonthHistory({
   const searchResults = useMemo(() => {
     if (!isSearching) return [];
     const q = searchQuery.trim().toLowerCase();
+    // History is completed-tasks-only, organized by completion date — a task
+    // without a completedAt (still open, or reopened after being done) has no
+    // place in it, matching/searchable or not.
     return tasks
-      .filter((t) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
-      .sort(compareByDeadlineDesc);
+      .filter((t) => !!t.completedAt && (t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)))
+      .sort(compareByCompletedAtDesc);
   }, [tasks, searchQuery, isSearching]);
 
   const dayGroups = useMemo(
@@ -88,7 +91,7 @@ export default function MonthHistory({
             <CalendarX className="text-ink-soft dark:text-ink-dark-soft" size={26} strokeWidth={1.8} />
           </div>
           <p className="text-sm font-medium text-ink-soft dark:text-ink-dark-soft">
-            אין משימות עם דדליין בחודש הזה
+            אין משימות שהושלמו בחודש הזה
           </p>
         </div>
       ) : groupBy === "day" ? (

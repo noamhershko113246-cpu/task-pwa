@@ -4,8 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2, Settings } from "lucide-react";
-import { Task, Priority, memberRank, getVisibleScope } from "@/lib/types";
-import { resolveBackgroundLayer } from "@/lib/backgroundPresets";
+import { Task, Priority, getVisibleScope, DEFAULT_DEPARTMENT } from "@/lib/types";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -25,6 +24,7 @@ import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
 import SettingsSheet from "@/components/SettingsSheet";
+import AppBackground from "@/components/AppBackground";
 import AITriageSheet from "@/components/AITriageSheet";
 import ProductivityWrapped from "@/components/ProductivityWrapped";
 import clsx from "clsx";
@@ -97,9 +97,11 @@ function ManagerDashboardInner() {
 
   if (loading || !me) return <LoadingScreen />;
 
-  // everyone ranked below me — a regular manager sees soldiers; a super-manager also sees other managers
-  const myRank = memberRank(me);
-  const managed = team.filter((m) => m.id !== me.id && memberRank(m) < myRank).map((m) => {
+  // everyone ranked below me, within my own department — a regular manager sees her
+  // soldiers, a super-manager also sees other managers, but never anyone outside her
+  // unit. Built from assignableTeam (getVisibleScope), not a raw team filter, so this
+  // stays in sync with department isolation and per-manager (managerId) restriction.
+  const managed = assignableTeam.filter((m) => m.id !== me.id).map((m) => {
     const mine = tasks.filter((t) => t.assigneeIds.includes(m.id));
     const mineActive = activeTasks(mine);
     return {
@@ -121,14 +123,8 @@ function ManagerDashboardInner() {
   };
 
   return (
-    <main
-      className="relative mx-auto min-h-dvh max-w-md bg-cover bg-center bg-fixed px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark"
-      style={
-        resolveBackgroundLayer(me)
-          ? { backgroundImage: `linear-gradient(var(--bg-scrim), var(--bg-scrim)), ${resolveBackgroundLayer(me)}` }
-          : undefined
-      }
-    >
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+      <AppBackground member={me} />
       <header className="mb-3 flex items-center justify-between">
         <AppHeader title="לוח פיקוד" subtitle={`שלום ${me.name},`} />
         <div className="flex shrink-0 items-center gap-2">
@@ -173,9 +169,14 @@ function ManagerDashboardInner() {
 
       <p className="mb-4 flex items-center gap-1.5 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
         <ShieldCheck size={13} />
-        {me.isSuperManager
-          ? "כקמשא, יש לך גישה מלאה לכל המשימות של כולם, כולל שאר המפקדות"
-          : "כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי המשרד"}
+        {(() => {
+          const unit = me.department && me.department !== DEFAULT_DEPARTMENT
+            ? `${me.department}${me.brigade ? " · " + me.brigade : ""}`
+            : "המשרד";
+          return me.isSuperManager
+            ? `כקמשא, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
+            : `כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי ${unit}`;
+        })()}
       </p>
 
       <div className="mb-3 flex items-center gap-2">

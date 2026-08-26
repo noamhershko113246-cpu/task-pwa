@@ -1,8 +1,16 @@
 import { Crown, ShieldCheck, Sparkles } from "lucide-react";
-import { TeamMember } from "@/lib/types";
+import { TeamMember, DEFAULT_DEPARTMENT } from "@/lib/types";
 import clsx from "clsx";
 
+/** Unit suffix appended to the role label — omitted entirely for the default (HR) department. */
+function unitSuffix(member: Pick<TeamMember, "department" | "brigade">): string {
+  if (!member.department || member.department === DEFAULT_DEPARTMENT) return "";
+  return ` · ${member.department}${member.brigade ? " " + member.brigade : ""}`;
+}
+
 export default function RoleBadge({ member, className }: { member: TeamMember; className?: string }) {
+  const unit = unitSuffix(member);
+
   if (member.isSuperManager) {
     return (
       <span
@@ -12,7 +20,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
         )}
       >
         <Sparkles size={12} strokeWidth={2.5} />
-        קמשא
+        קמשא{unit}
       </span>
     );
   }
@@ -25,7 +33,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
         )}
       >
         <Crown size={12} strokeWidth={2.5} />
-        מפקדת
+        מפקד/ת{unit}
       </span>
     );
   }
@@ -37,7 +45,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
       )}
     >
       <ShieldCheck size={12} strokeWidth={2.5} />
-      חייל/ת
+      חייל/ת{unit}
     </span>
   );
 }

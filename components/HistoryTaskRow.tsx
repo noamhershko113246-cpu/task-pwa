@@ -1,5 +1,5 @@
 import { Task, TeamMember } from "@/lib/types";
-import { formatDeadline } from "@/lib/utils";
+import { formatCompletedAt } from "@/lib/utils";
 import StatusBadge from "./StatusBadge";
 import Avatar from "./Avatar";
 import PriorityBadge from "./PriorityBadge";
@@ -40,7 +40,7 @@ export default function HistoryTaskRow({
         {dateLabel ? (
           <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-ink-soft dark:text-ink-dark-soft">
             <Calendar size={11} />
-            {formatDeadline(task.deadline)}
+            {formatCompletedAt(task.completedAt)}
           </span>
         ) : (
           <p className="truncate text-xs text-ink-soft dark:text-ink-dark-soft">{task.description}</p>
