@@ -284,7 +284,11 @@ function TeamManagementInner() {
                 <div className="flex items-center gap-3">
                   <Avatar member={member} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    {/* flex-wrap, not a fixed single row: the commander-tier badge ("מפקד/ת
+                        מחלקה · <unit>") is long enough at mobile widths to otherwise squeeze
+                        the name down to a couple of truncated letters — wrapping it onto its
+                        own line keeps the name fully readable instead. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <p className="truncate text-sm font-bold text-ink dark:text-ink-dark">{member.name}</p>
                       <RoleBadge member={member} />
                     </div>

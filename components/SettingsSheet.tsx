@@ -150,14 +150,18 @@ export default function SettingsSheet({
 
   // Stand-in ("ממלא/ת מקום") grants are self-service and one-directional: only the target
   // (member, i.e. whoever has Settings open) can grant someone else access to THEIR OWN
-  // account — restricted to their own department, matching the hard department wall
-  // getVisibleScope enforces everywhere else. And only a manager-tier person may grant this
-  // at all — a regular soldier can be someone's stand-in, but can't hand out that access to
-  // her own account to a third party.
+  // account — restricted to their own (brigade, department) instance, matching the hard wall
+  // getVisibleScope enforces everywhere else. Department names repeat across units on purpose
+  // (e.g. 'משא"ן' at both מפא"ג and חטיבה 10), so brigade has to be checked too — department
+  // alone would offer up colleagues from a completely different, isolated unit as candidates.
+  // And only a manager-tier person may grant this at all — a regular soldier can be someone's
+  // stand-in, but can't hand out that access to her own account to a third party.
   const canGrantProxy = Boolean(member.isManager || member.isSuperManager || member.isSuperAdmin);
   const myDept = member.department ?? DEFAULT_DEPARTMENT;
   const proxyCandidates = canGrantProxy
-    ? team.filter((m) => m.id !== member.id && (m.department ?? DEFAULT_DEPARTMENT) === myDept)
+    ? team.filter(
+        (m) => m.id !== member.id && (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === member.brigade
+      )
     : [];
   const currentProxyIds = member.proxyIds ?? [];
 

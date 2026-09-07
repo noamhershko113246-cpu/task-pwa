@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2, Settings } from "lucide-react";
-import { Priority, getVisibleScope, DEFAULT_DEPARTMENT } from "@/lib/types";
+import { Priority, getVisibleScope } from "@/lib/types";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -179,12 +179,13 @@ function ManagerDashboardInner() {
       <p className="mb-4 flex items-center gap-1.5 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
         <ShieldCheck size={13} />
         {(() => {
-          const unit = me.department && me.department !== DEFAULT_DEPARTMENT
-            ? `${me.department}${me.brigade ? " · " + me.brigade : ""}`
-            : "המשרד";
+          // No department === DEFAULT_DEPARTMENT special-case here on purpose — 'משא"ן' now
+          // exists at both מפא"ג and חטיבה 10, so that check used to hide exactly the unit
+          // info that tells those two isolated instances apart.
+          const unit = me.department ? `${me.department}${me.brigade ? " · " + me.brigade : ""}` : "המשרד";
           if (me.isSuperAdmin) return "כ-Super Admin, יש לך גישה מלאה לכל המשימות והמשתמשים בכל היחידות";
           return me.isSuperManager
-            ? `כקמשא, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
+            ? `כמפקד/ת מחלקה, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
             : `כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי ${unit}`;
         })()}
       </p>

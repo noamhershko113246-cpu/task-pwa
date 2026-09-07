@@ -1,10 +1,16 @@
 import { Crown, ShieldCheck, Sparkles, KeyRound } from "lucide-react";
-import { TeamMember, DEFAULT_DEPARTMENT } from "@/lib/types";
+import { TeamMember } from "@/lib/types";
 import clsx from "clsx";
 
-/** Unit suffix appended to the role label — omitted entirely for the default (HR) department. */
+/**
+ * Unit suffix appended to the role label. Always shown when department is set — it used to be
+ * omitted for department === DEFAULT_DEPARTMENT ('משא"ן'), back when there was only one
+ * department in the whole app and "unset" and "the default" were the same thing. That's no
+ * longer true: 'משא"ן' now exists at both מפא"ג and חטיבה 10, so suppressing the suffix for it
+ * specifically hid exactly the information that distinguishes those two isolated instances.
+ */
 function unitSuffix(member: Pick<TeamMember, "department" | "brigade">): string {
-  if (!member.department || member.department === DEFAULT_DEPARTMENT) return "";
+  if (!member.department) return "";
   return ` · ${member.department}${member.brigade ? " " + member.brigade : ""}`;
 }
 
@@ -29,7 +35,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
     );
   }
   if (member.isSuperManager) {
-    // "מפקד/ת מדור" — deliberately generic, not a specific role name: the actual title (e.g.
+    // "מפקד/ת מחלקה" — deliberately generic, not a specific role name: the actual title (e.g.
     // "קמשא" for a משא"ן commander, "קטא" for a טנ"א commander) belongs in this person's own
     // `title` field and is shown separately. A hardcoded specific title here was wrong the
     // moment a second department got its own commander — "קמשא" literally means "the משא"ן
@@ -42,7 +48,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
         )}
       >
         <Sparkles size={12} strokeWidth={2.5} />
-        מפקד/ת מדור{unit}
+        מפקד/ת מחלקה{unit}
       </span>
     );
   }

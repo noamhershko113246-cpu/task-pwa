@@ -59,7 +59,7 @@ export function flagsFromRank(rank: DepartmentRank): { isManager: boolean; isSup
 }
 
 // Matches the wording RoleBadge.tsx already shows elsewhere in the app for these same two
-// flags (isManager → "מפקד/ת", isSuperManager → "מפקד/ת מדור") — kept identical on purpose so
+// flags (isManager → "מפקד/ת", isSuperManager → "מפקד/ת מחלקה") — kept identical on purpose so
 // this select and the roster's badges never disagree about what to call the same person's
 // rank. Deliberately generic, not a specific role name: a department's real commander title
 // (e.g. "קמשא" for משא"ן, "קטא" for טנ"א) is per-person data that belongs in their own `title`
@@ -67,5 +67,5 @@ export function flagsFromRank(rank: DepartmentRank): { isManager: boolean; isSup
 export const RANK_LABELS: Record<DepartmentRank, string> = {
   member: "חייל/ת",
   officer: "מפקד/ת",
-  commander: "מפקד/ת מדור",
+  commander: "מפקד/ת מחלקה",
 };
