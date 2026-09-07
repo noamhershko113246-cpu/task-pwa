@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
 import { X, Repeat } from "lucide-react";
 import { TeamMember, Task, Priority, PRIORITY_COLORS } from "@/lib/types";
-import { generateRecurringDates, WEEKDAY_LETTERS } from "@/lib/utils";
+import { generateRecurringDates, WEEKDAY_LETTERS, firstName } from "@/lib/utils";
 import clsx from "clsx";
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
@@ -14,11 +14,15 @@ export default function CreateTaskSheet({
   onClose,
   team,
   onCreate,
+  initialDate,
 }: {
   open: boolean;
   onClose: () => void;
   team: TeamMember[];
   onCreate: (tasks: Omit<Task, "id" | "createdAt" | "status">[]) => void;
+  /** "YYYY-MM-DD" — when opened from a specific calendar day, pre-fills the deadline to that
+   *  day (09:00) instead of leaving it empty. The date/time stays fully editable either way. */
+  initialDate?: string;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -29,6 +33,10 @@ export default function CreateTaskSheet({
   const [recurrenceEnd, setRecurrenceEnd] = useState("");
   const [priority, setPriority] = useState<Priority>(3);
   const dragControls = useDragControls();
+
+  useEffect(() => {
+    if (open && initialDate) setDeadline(`${initialDate}T09:00`);
+  }, [open, initialDate]);
 
   const assignable = team;
 
@@ -79,7 +87,9 @@ export default function CreateTaskSheet({
 
     if (isRecurring) {
       if (recurringDates.length === 0) return;
-      const recurrenceId = `rec${Date.now()}`;
+      // tasks.recurrence_id is a real `uuid` column in Postgres — it must be a valid
+      // UUID or every insert in the batch is rejected.
+      const recurrenceId = crypto.randomUUID();
       onCreate(recurringDates.map((d) => ({ ...base, deadline: d, recurrenceId })));
     } else {
       onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }]);
@@ -173,7 +183,7 @@ export default function CreateTaskSheet({
                       key={m.id}
                       onClick={() => toggleAssignee(m.id)}
                       className={clsx(
-                        "flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br font-bold text-white text-sm transition-all active:scale-90",
+                        "flex h-12 min-w-[3.5rem] items-center justify-center rounded-full bg-gradient-to-br px-3.5 font-bold text-white text-sm transition-all active:scale-90",
                         m.colorFrom,
                         m.colorTo,
                         assigneeIds.has(m.id)
@@ -182,7 +192,7 @@ export default function CreateTaskSheet({
                       )}
                       aria-pressed={assigneeIds.has(m.id)}
                     >
-                      {m.initials}
+                      {firstName(m.name)}
                     </button>
                   ))}
                 </div>

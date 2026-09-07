@@ -22,7 +22,9 @@ export default function RootGateway() {
       router.replace("/login");
       return;
     }
-    router.replace(member.isManager ? "/manager" : `/staff?user=${member.id}`);
+    // isSuperAdmin (e.g. Noam) gets full cross-department access without being a
+    // "manager" in rank — she still lands on the command dashboard by default.
+    router.replace(member.isManager || member.isSuperAdmin ? "/manager" : `/staff?user=${member.id}`);
   }, [router, team, loading]);
 
   return <LoadingScreen />;

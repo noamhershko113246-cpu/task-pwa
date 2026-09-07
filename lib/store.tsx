@@ -1,11 +1,14 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode, useRef } from "react";
-import { Task, ActivityEvent, TeamMember, Comment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT } from "./types";
+import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT } from "./types";
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
+import { removeTaskAttachmentFile } from "./attachments";
 
-const AVATAR_COLORS: [string, string][] = [
+// Exported so the Settings UI can offer the exact same palette as a picker, instead of only
+// ever being assigned round-robin at creation time.
+export const AVATAR_COLORS: [string, string][] = [
   ["from-sky-400", "to-sky-600"],
   ["from-rose-400", "to-rose-600"],
   ["from-amber-400", "to-amber-600"],
@@ -15,6 +18,18 @@ const AVATAR_COLORS: [string, string][] = [
   ["from-fuchsia-400", "to-fuchsia-600"],
   ["from-lime-400", "to-lime-600"],
 ];
+
+/** First letter of the first word + first letter of the last word (e.g. "עמית כהן" -> "עכ") —
+ *  now that names are required to be first+last, this keeps initials actually distinguishing
+ *  people instead of two different "עמית ..."s both showing "עמ". Falls back to the first two
+ *  characters for a lone single-word name (only relevant to data that predates the full-name
+ *  requirement). */
+function computeInitials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0].slice(0, 2);
+  return parts[0][0] + parts[parts.length - 1][0];
+}
 
 // --- DB row <-> app type mapping (DB uses snake_case) ---
 
@@ -42,6 +57,9 @@ interface TeamRow {
   department: string;
   brigade: string | null;
   is_super_admin: boolean;
+  title: string | null;
+  avatar_url: string | null;
+  proxy_ids: string[];
 }
 
 interface TaskRow {
@@ -64,6 +82,17 @@ interface CommentRow {
   task_id: string;
   user_id: string;
   text: string;
+  created_at: string;
+}
+
+interface AttachmentRow {
+  id: string;
+  task_id: string;
+  uploaded_by: string | null;
+  file_url: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
   created_at: string;
 }
 
@@ -101,6 +130,9 @@ function memberFromRow(r: TeamRow): TeamMember {
     department: r.department,
     brigade: r.brigade,
     isSuperAdmin: r.is_super_admin,
+    title: r.title,
+    avatarUrl: r.avatar_url,
+    proxyIds: r.proxy_ids ?? [],
   };
 }
 
@@ -125,6 +157,19 @@ function commentFromRow(r: CommentRow): Comment {
   return { id: r.id, userId: r.user_id, text: r.text, timestamp: r.created_at };
 }
 
+function attachmentFromRow(r: AttachmentRow): Attachment {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    uploadedBy: r.uploaded_by ?? undefined,
+    fileUrl: r.file_url,
+    fileName: r.file_name,
+    mimeType: r.mime_type,
+    sizeBytes: r.size_bytes,
+    timestamp: r.created_at,
+  };
+}
+
 function activityFromRow(r: ActivityRow): ActivityEvent {
   return { id: r.id, userId: r.user_id ?? "", taskId: r.task_id ?? "", taskTitle: r.task_title, action: r.action, timestamp: r.created_at };
 }
@@ -135,10 +180,18 @@ interface TaskStoreValue {
   activity: ActivityEvent[];
   team: TeamMember[];
   createTasks: (newTasks: Omit<Task, "id" | "createdAt" | "status">[]) => void;
-  updateTask: (id: string, patch: Partial<Task>) => void;
+  // actorId: who's actually performing this edit — required to log/notify correctly when a
+  // reassignment amounts to one person transferring the task to another (see updateTask below).
+  updateTask: (id: string, patch: Partial<Task>, actorId?: string) => void;
   deleteTask: (id: string, scope: "one" | "series") => void;
   addComment: (taskId: string, userId: string, text: string) => void;
-  addMember: (name: string, department?: string, brigade?: string | null) => void;
+  addAttachment: (
+    taskId: string,
+    uploadedBy: string,
+    file: { url: string; fileName: string; mimeType: string; sizeBytes: number }
+  ) => void;
+  removeAttachment: (attachmentId: string) => void;
+  addMember: (name: string, department?: string, brigade?: string | null, title?: string | null) => void;
   updateMember: (
     id: string,
     patch: {
@@ -155,6 +208,11 @@ interface TaskStoreValue {
       overdueReminderIntervalMinutes?: number;
       department?: string;
       brigade?: string | null;
+      title?: string | null;
+      avatarUrl?: string | null;
+      colorFrom?: string;
+      colorTo?: string;
+      proxyIds?: string[];
     }
   ) => void;
   removeMember: (id: string) => void;
@@ -168,6 +226,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [rawTasks, setRawTasks] = useState<Omit<Task, "comments">[]>([]);
   const [commentsByTask, setCommentsByTask] = useState<Record<string, Comment[]>>({});
+  const [attachmentsByTask, setAttachmentsByTask] = useState<Record<string, Attachment[]>>({});
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const teamRef = useRef<TeamMember[]>([]);
   teamRef.current = team;
@@ -194,10 +253,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [teamRes, tasksRes, commentsRes, activityRes] = await Promise.all([
+      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes] = await Promise.all([
         supabase.from("team_members").select("*").order("created_at"),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("task_comments").select("*").order("created_at"),
+        supabase.from("task_attachments").select("*").order("created_at"),
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
       ]);
       if (cancelled) return;
@@ -213,6 +273,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           (grouped[row.task_id] ??= []).push(c);
         }
         setCommentsByTask(grouped);
+      }
+      if (attachmentsRes.data) {
+        const grouped: Record<string, Attachment[]> = {};
+        for (const row of attachmentsRes.data as AttachmentRow[]) {
+          const a = attachmentFromRow(row);
+          (grouped[row.task_id] ??= []).push(a);
+        }
+        setAttachmentsByTask(grouped);
       }
       if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
       setLoading(false);
@@ -258,6 +326,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           const existing = prev[row.task_id] ?? [];
           if (existing.some((x) => x.id === c.id)) return prev;
           return { ...prev, [row.task_id]: [...existing, c] };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_attachments" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          // Postgres only guarantees the primary key on a DELETE's "old" row by default
+          // (REPLICA IDENTITY DEFAULT) — task_id isn't reliably present, so this has to search
+          // every task's list rather than jumping straight to one via task_id.
+          const deletedId = (payload.old as { id: string }).id;
+          setAttachmentsByTask((prev) => {
+            let changed = false;
+            const next: Record<string, Attachment[]> = {};
+            for (const [taskId, list] of Object.entries(prev)) {
+              const filtered = list.filter((x) => x.id !== deletedId);
+              if (filtered.length !== list.length) changed = true;
+              next[taskId] = filtered;
+            }
+            return changed ? next : prev;
+          });
+          return;
+        }
+        const row = payload.new as AttachmentRow;
+        const a = attachmentFromRow(row);
+        setAttachmentsByTask((prev) => {
+          const existing = prev[row.task_id] ?? [];
+          if (existing.some((x) => x.id === a.id)) return prev;
+          return { ...prev, [row.task_id]: [...existing, a] };
         });
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, (payload) => {
@@ -329,12 +423,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         // instead of one `await` per task (which was serial and slow for recurring batches).
         const activityRows = createdRows.map((row) => {
           const names = row.assignee_ids.map((id) => findMember(id)?.name ?? "").filter(Boolean).join(", ");
-          const creator = row.created_by ? findMember(row.created_by) : undefined;
           return {
             user_id: row.created_by || row.assignee_ids[0] || null,
             task_id: row.id,
             task_title: row.title,
-            action: `${creator?.isManager ? "יצרה" : "יצר/ה"} משימה עבור ${names}`,
+            // Dual-form regardless of role — there's no gender field on team_members,
+            // and hardcoding the feminine form for managers (as this used to do) reads
+            // wrong the moment any manager is male.
+            action: `יצר/ה משימה עבור ${names}`,
           };
         });
         await supabase.from("activity_log").insert(activityRows);
@@ -370,8 +466,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [findMember, logActivity, sendPush, reportIfError, showToast]);
 
-  const updateTask: TaskStoreValue["updateTask"] = useCallback((id, patch) => {
+  const updateTask: TaskStoreValue["updateTask"] = useCallback((id, patch, actorId) => {
     (async () => {
+      // Captured before the write so it still reflects pre-update assignees — local state only
+      // catches up once the realtime echo arrives, which never happens synchronously here.
+      const taskBeforeUpdate = rawTasksRef.current.find((t) => t.id === id);
+
       const dbPatch: Record<string, unknown> = {};
       if (patch.title !== undefined) dbPatch.title = patch.title;
       if (patch.description !== undefined) dbPatch.description = patch.description;
@@ -400,8 +500,37 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+
+      // Reassignment ("transfer") — most relevant to a proxy handing a task off to whoever she's
+      // standing in for, from her own screen, without ever opening his. Logged + pushed to the
+      // newly-added assignee(s) specifically so it's visible who actually made the change, since
+      // task.createdBy never changes here (it still points at whoever originally made the task).
+      if (patch.assigneeIds !== undefined && taskBeforeUpdate) {
+        const oldIds = taskBeforeUpdate.assigneeIds;
+        const newIds = patch.assigneeIds;
+        const added = newIds.filter((x) => !oldIds.includes(x));
+        if (added.length > 0) {
+          const actor = actorId ? findMember(actorId) : undefined;
+          const addedNames = added.map((aid) => findMember(aid)?.name ?? "").filter(Boolean).join(", ");
+          await logActivity({
+            userId: actorId ?? "",
+            taskId: id,
+            taskTitle: taskBeforeUpdate.title,
+            action: `העביר/ה את המשימה ל${addedNames}`,
+          });
+          const recipients = added.filter((aid) => aid !== actorId);
+          if (recipients.length > 0) {
+            sendPush(
+              recipients,
+              actor ? `קיבלת משימה מ${actor.name}` : "קיבלת משימה חדשה",
+              taskBeforeUpdate.title,
+              `/staff?user=${recipients[0]}`
+            );
+          }
+        }
+      }
     })();
-  }, [sendPush, reportIfError]);
+  }, [sendPush, reportIfError, findMember, logActivity]);
 
   const deleteTask: TaskStoreValue["deleteTask"] = useCallback((id, scope) => {
     (async () => {
@@ -426,7 +555,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       const task = rawTasksRef.current.find((t) => t.id === taskId);
       const { error } = await supabase.from("task_comments").insert({ task_id: taskId, user_id: userId, text });
       if (reportIfError(error, "שליחת ההערה")) return;
-      await logActivity({ userId, taskId, taskTitle: task?.title ?? "", action: `${commenter?.isManager ? "הוסיפה" : "הוסיף/ה"} הערה` });
+      // Dual-form regardless of role — see the identical note in createTasks above.
+      await logActivity({ userId, taskId, taskTitle: task?.title ?? "", action: "הוסיף/ה הערה" });
       if (task) {
         const managerIds = teamRef.current.filter((m) => m.isManager && m.id !== userId).map((m) => m.id);
         sendPush(managerIds, `הערה חדשה מ${commenter?.name ?? ""}`, `"${task.title}": ${text}`, "/manager");
@@ -434,7 +564,42 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [findMember, logActivity, sendPush, reportIfError]);
 
-  const addMember: TaskStoreValue["addMember"] = useCallback((name, department, brigade) => {
+  const addAttachment: TaskStoreValue["addAttachment"] = useCallback((taskId, uploadedBy, file) => {
+    (async () => {
+      const uploader = findMember(uploadedBy);
+      const task = rawTasksRef.current.find((t) => t.id === taskId);
+      const { error } = await supabase.from("task_attachments").insert({
+        task_id: taskId,
+        uploaded_by: uploadedBy,
+        file_url: file.url,
+        file_name: file.fileName,
+        mime_type: file.mimeType,
+        size_bytes: file.sizeBytes,
+      });
+      if (reportIfError(error, "העלאת הקובץ")) return;
+      await logActivity({ userId: uploadedBy, taskId, taskTitle: task?.title ?? "", action: `צירף/ה קובץ (${file.fileName})` });
+      if (task) {
+        const managerIds = teamRef.current.filter((m) => m.isManager && m.id !== uploadedBy).map((m) => m.id);
+        sendPush(managerIds, `קובץ חדש מ${uploader?.name ?? ""}`, `"${task.title}": ${file.fileName}`, "/manager");
+      }
+    })();
+  }, [findMember, logActivity, sendPush, reportIfError]);
+
+  const removeAttachment: TaskStoreValue["removeAttachment"] = useCallback((attachmentId) => {
+    (async () => {
+      const { data, error: fetchError } = await supabase
+        .from("task_attachments")
+        .select("file_url")
+        .eq("id", attachmentId)
+        .single();
+      if (reportIfError(fetchError, "מחיקת הקובץ")) return;
+      const { error } = await supabase.from("task_attachments").delete().eq("id", attachmentId);
+      if (reportIfError(error, "מחיקת הקובץ")) return;
+      if (data?.file_url) await removeTaskAttachmentFile(data.file_url as string);
+    })();
+  }, [reportIfError]);
+
+  const addMember: TaskStoreValue["addMember"] = useCallback((name, department, brigade, title) => {
     (async () => {
       const trimmedName = name.trim();
       const [colorFrom, colorTo] = AVATAR_COLORS[teamRef.current.length % AVATAR_COLORS.length];
@@ -448,13 +613,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // isolated unit as whoever added them.
       const { error } = await supabase.from("team_members").insert({
         name: trimmedName,
-        initials: trimmedName.slice(0, 2),
+        initials: computeInitials(trimmedName),
         color_from: colorFrom,
         color_to: colorTo,
         phone: `no-phone-login-${Date.now()}`,
         login_keyword: trimmedName,
         department: department ?? DEFAULT_DEPARTMENT,
         brigade: brigade ?? null,
+        title: title ?? null,
       });
       if (reportIfError(error, "הוספת החייל/ת")) return;
       showToast(`${trimmedName} נוסף/ה בהצלחה לצוות`);
@@ -466,7 +632,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       const dbPatch: Record<string, unknown> = {};
       if (patch.name !== undefined) {
         dbPatch.name = patch.name.trim();
-        dbPatch.initials = patch.name.trim().slice(0, 2);
+        dbPatch.initials = computeInitials(patch.name.trim());
       }
       if (patch.phone !== undefined) dbPatch.phone = patch.phone.trim();
       if (patch.dailySummaryEnabled !== undefined) dbPatch.daily_summary_enabled = patch.dailySummaryEnabled;
@@ -481,6 +647,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         dbPatch.overdue_reminder_interval_minutes = patch.overdueReminderIntervalMinutes;
       if (patch.department !== undefined) dbPatch.department = patch.department;
       if (patch.brigade !== undefined) dbPatch.brigade = patch.brigade;
+      if (patch.title !== undefined) dbPatch.title = patch.title;
+      if (patch.avatarUrl !== undefined) dbPatch.avatar_url = patch.avatarUrl;
+      if (patch.colorFrom !== undefined) dbPatch.color_from = patch.colorFrom;
+      if (patch.colorTo !== undefined) dbPatch.color_to = patch.colorTo;
+      if (patch.proxyIds !== undefined) dbPatch.proxy_ids = patch.proxyIds;
       const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון הפרטים")) return;
       // Silent settings toggles (like the reminder popover) don't need their own
@@ -519,15 +690,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   }, [findMember, reportIfError, showToast]);
 
   const tasks = useMemo<Task[]>(
-    () => rawTasks.map((t) => ({ ...t, comments: commentsByTask[t.id] ?? [] })),
-    [rawTasks, commentsByTask]
+    () => rawTasks.map((t) => ({ ...t, comments: commentsByTask[t.id] ?? [], attachments: attachmentsByTask[t.id] ?? [] })),
+    [rawTasks, commentsByTask, attachmentsByTask]
   );
 
   // Every action function above is now stable (useCallback + refs for live data),
   // so this only needs to change when the actual DATA changes — not on every render.
   const value = useMemo(
-    () => ({ loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment, addMember, updateMember, removeMember }),
-    [loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment, addMember, updateMember, removeMember]
+    () => ({
+      loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment,
+      addAttachment, removeAttachment, addMember, updateMember, removeMember,
+    }),
+    [loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment,
+      addAttachment, removeAttachment, addMember, updateMember, removeMember]
   );
 
   return <TaskStoreContext.Provider value={value}>{children}</TaskStoreContext.Provider>;

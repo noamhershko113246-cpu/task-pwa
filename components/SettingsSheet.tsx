@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Settings, Sun, Moon, MonitorSmartphone, Image as ImageIcon, Trash2, Loader2, Clock } from "lucide-react";
-import { useTaskStore } from "@/lib/store";
-import { TeamMember } from "@/lib/types";
+import { X, Settings, Sun, Moon, MonitorSmartphone, Image as ImageIcon, Trash2, Loader2, Clock, UserCog } from "lucide-react";
+import { useTaskStore, AVATAR_COLORS } from "@/lib/store";
+import { TeamMember, DEFAULT_DEPARTMENT } from "@/lib/types";
 import { getStoredTheme, setTheme, ThemePreference } from "@/lib/theme";
 import { uploadBackground, removeBackground } from "@/lib/background";
+import { uploadAvatarPhoto, removeAvatarPhoto } from "@/lib/avatar";
 import { BACKGROUND_PRESETS } from "@/lib/backgroundPresets";
+import Avatar from "./Avatar";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "לפי המערכת", icon: MonitorSmartphone },
@@ -31,8 +33,11 @@ export default function SettingsSheet({
   onClose: () => void;
   member: TeamMember;
 }) {
-  const { updateMember } = useTaskStore();
+  const { updateMember, team } = useTaskStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const [theme, setThemeState] = useState<ThemePreference>("system");
   useEffect(() => {
@@ -114,6 +119,55 @@ export default function SettingsSheet({
     updateMember(member.id, { backgroundPreset: key, backgroundUrl: null });
   };
 
+  const handlePickAvatar = () => avatarInputRef.current?.click();
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAvatarUploading(true);
+    setAvatarError(null);
+    const result = await uploadAvatarPhoto(member.id, file);
+    setAvatarUploading(false);
+    if ("error" in result) {
+      setAvatarError(result.error);
+      return;
+    }
+    updateMember(member.id, { avatarUrl: result.url });
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null);
+    const hadPhoto = !!member.avatarUrl;
+    updateMember(member.id, { avatarUrl: null });
+    if (hadPhoto) await removeAvatarPhoto(member.id);
+  };
+
+  const handlePickAvatarColor = (colorFrom: string, colorTo: string) => {
+    setAvatarError(null);
+    updateMember(member.id, { colorFrom, colorTo });
+  };
+
+  // Stand-in ("ממלא/ת מקום") grants are self-service and one-directional: only the target
+  // (member, i.e. whoever has Settings open) can grant someone else access to THEIR OWN
+  // account — restricted to their own department, matching the hard department wall
+  // getVisibleScope enforces everywhere else. And only a manager-tier person may grant this
+  // at all — a regular soldier can be someone's stand-in, but can't hand out that access to
+  // her own account to a third party.
+  const canGrantProxy = Boolean(member.isManager || member.isSuperManager || member.isSuperAdmin);
+  const myDept = member.department ?? DEFAULT_DEPARTMENT;
+  const proxyCandidates = canGrantProxy
+    ? team.filter((m) => m.id !== member.id && (m.department ?? DEFAULT_DEPARTMENT) === myDept)
+    : [];
+  const currentProxyIds = member.proxyIds ?? [];
+
+  const handleToggleProxy = (colleagueId: string) => {
+    const next = currentProxyIds.includes(colleagueId)
+      ? currentProxyIds.filter((id) => id !== colleagueId)
+      : [...currentProxyIds, colleagueId];
+    updateMember(member.id, { proxyIds: next });
+  };
+
   const handleWorkingHoursToggle = () => {
     const next = !workingHoursEnabled;
     setWorkingHoursEnabled(next);
@@ -177,6 +231,55 @@ export default function SettingsSheet({
             </div>
 
             <div className="space-y-6">
+              {/* Profile photo + avatar color — like a WhatsApp/Instagram profile picture;
+                  falls back to the colored initials circle everywhere when no photo is set. */}
+              <section>
+                <p className="mb-2 text-sm font-bold text-ink dark:text-ink-dark">תמונת פרופיל</p>
+                <div className="flex items-center gap-3">
+                  <Avatar member={member} size="lg" />
+                  <div className="flex flex-1 gap-2">
+                    <button
+                      onClick={handlePickAvatar}
+                      disabled={avatarUploading}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 py-2 text-xs font-semibold text-ink dark:text-ink-dark disabled:opacity-60"
+                    >
+                      {avatarUploading ? <Loader2 size={14} className="animate-spin" /> : <ImageIcon size={14} />}
+                      {avatarUploading ? "מעלה..." : member.avatarUrl ? "החלף תמונה" : "העלאת תמונה"}
+                    </button>
+                    {member.avatarUrl && (
+                      <button
+                        onClick={handleRemoveAvatar}
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400"
+                        aria-label="הסרת תמונת הפרופיל"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
+                {avatarError && <p className="mt-1.5 text-[11px] text-rose-600 dark:text-rose-400">{avatarError}</p>}
+
+                <p className="mb-1.5 mt-3 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+                  צבע ברירת מחדל (מוצג כשאין תמונת פרופיל)
+                </p>
+                <div className="grid grid-cols-8 gap-2">
+                  {AVATAR_COLORS.map(([colorFrom, colorTo]) => {
+                    const active = !member.avatarUrl && member.colorFrom === colorFrom && member.colorTo === colorTo;
+                    return (
+                      <button
+                        key={`${colorFrom}-${colorTo}`}
+                        onClick={() => handlePickAvatarColor(colorFrom, colorTo)}
+                        aria-label="בחירת צבע"
+                        className={`aspect-square rounded-full bg-gradient-to-br ${colorFrom} ${colorTo} ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-dark-card transition-all ${
+                          active ? "ring-brand-500 scale-95" : "ring-transparent"
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+
               {/* Appearance */}
               <section>
                 <p className="mb-2 text-sm font-bold text-ink dark:text-ink-dark">מראה</p>
@@ -390,6 +493,51 @@ export default function SettingsSheet({
                   </div>
                 </div>
               </section>
+
+              {/* Stand-in access: grants a colleague (same unit only) permission to create/manage
+                  tasks on this account's behalf and open its /staff page, regardless of rank. */}
+              {proxyCandidates.length > 0 && (
+                <section>
+                  <p className="mb-1 flex items-center gap-1.5 text-sm font-bold text-ink dark:text-ink-dark">
+                    <UserCog size={14} className="text-ink-soft dark:text-ink-dark-soft" />
+                    ממלאי מקום
+                  </p>
+                  <p className="mb-2 text-[11px] leading-snug text-ink-soft dark:text-ink-dark-soft">
+                    מי מהיחידה שלך יכול/ה ליצור ולנהל משימות עבורך, ולפתוח את עמוד המשימות שלך —
+                    גם אם היא/הוא בדרגה נמוכה יותר.
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {proxyCandidates.map((colleague) => {
+                      const active = currentProxyIds.includes(colleague.id);
+                      return (
+                        <button
+                          key={colleague.id}
+                          onClick={() => handleToggleProxy(colleague.id)}
+                          className="flex items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Avatar member={colleague} size="sm" />
+                            <span className="text-xs font-semibold text-ink dark:text-ink-dark">{colleague.name}</span>
+                          </div>
+                          <span
+                            role="switch"
+                            aria-checked={active}
+                            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                              active ? "bg-brand-500" : "bg-zinc-300 dark:bg-zinc-600"
+                            }`}
+                          >
+                            <span
+                              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                                active ? "translate-x-0.5" : "translate-x-5"
+                              }`}
+                            />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
             </div>
           </motion.div>
         </>

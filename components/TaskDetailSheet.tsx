@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
-import { X, Trash2, Send, Repeat, AlertTriangle, XCircle } from "lucide-react";
+import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2 } from "lucide-react";
 import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS } from "@/lib/types";
-import { timeAgoHebrew, toDatetimeLocalValue } from "@/lib/utils";
+import { timeAgoHebrew, toDatetimeLocalValue, firstName } from "@/lib/utils";
+import { uploadTaskAttachment, isImageAttachment, formatFileSize } from "@/lib/attachments";
 import Avatar from "./Avatar";
 import clsx from "clsx";
 
@@ -20,6 +21,8 @@ export default function TaskDetailSheet({
   onUpdate,
   onDelete,
   onAddComment,
+  onAddAttachment,
+  onRemoveAttachment,
 }: {
   task: Task | null;
   team: TeamMember[]; // full roster — used to resolve names/avatars for comments etc.
@@ -29,6 +32,8 @@ export default function TaskDetailSheet({
   onUpdate: (id: string, patch: Partial<Task>) => void;
   onDelete: (id: string, scope: "one" | "series") => void;
   onAddComment: (taskId: string, userId: string, text: string) => void;
+  onAddAttachment?: (taskId: string, userId: string, file: { url: string; fileName: string; mimeType: string; sizeBytes: number }) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
 }) {
   const pickerTeam = assignableTeam ?? team;
   const [title, setTitle] = useState("");
@@ -39,8 +44,18 @@ export default function TaskDetailSheet({
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragControls = useDragControls();
 
+  // Re-initializes the editable fields only when a *different* task is opened (by id),
+  // not on every store update — `task` itself is now looked up live from the store, so
+  // reacting to every reference change would wipe out whatever you're mid-typing the
+  // instant someone else's unrelated change (or even a new comment on THIS task)
+  // comes in over realtime. Read-only bits below (comments, creator, recurrence badge,
+  // the quick-cancel button's visibility) read straight from `task`, so they still
+  // update live while the sheet is open — only the edit form itself is "frozen" per view.
   useEffect(() => {
     if (task) {
       setTitle(task.title);
@@ -52,7 +67,8 @@ export default function TaskDetailSheet({
       setConfirmingDelete(false);
       setCommentText("");
     }
-  }, [task]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => {
@@ -101,6 +117,23 @@ export default function TaskDetailSheet({
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.y > 100) handleClose();
+  };
+
+  const handlePickFile = () => fileInputRef.current?.click();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !task) return;
+    setUploadingFile(true);
+    setFileError(null);
+    const result = await uploadTaskAttachment(task.id, file);
+    setUploadingFile(false);
+    if ("error" in result) {
+      setFileError(result.error);
+      return;
+    }
+    onAddAttachment?.(task.id, currentUserId, result);
   };
 
   const findMember = (id: string) => team.find((m) => m.id === id);
@@ -204,7 +237,7 @@ export default function TaskDetailSheet({
                       key={m.id}
                       onClick={() => toggleAssignee(m.id)}
                       className={clsx(
-                        "flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br font-bold text-white text-xs transition-all active:scale-90",
+                        "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full bg-gradient-to-br px-3 font-bold text-white text-xs transition-all active:scale-90",
                         m.colorFrom,
                         m.colorTo,
                         assigneeIds.has(m.id)
@@ -212,7 +245,7 @@ export default function TaskDetailSheet({
                           : "opacity-60 hover:opacity-100"
                       )}
                     >
-                      {m.initials}
+                      {firstName(m.name)}
                     </button>
                   ))}
                 </div>
@@ -350,6 +383,89 @@ export default function TaskDetailSheet({
                   </button>
                 </div>
               )}
+
+              {/* Attachments */}
+              <div className="border-t border-zinc-100 dark:border-zinc-800 pt-5">
+                <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-ink-dark">
+                  <Paperclip size={14} />
+                  קבצים מצורפים
+                </p>
+                {(task.attachments ?? []).length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    {(task.attachments ?? []).map((a) => {
+                      const uploader = a.uploadedBy ? findMember(a.uploadedBy) : undefined;
+                      return isImageAttachment(a.mimeType) ? (
+                        <a
+                          key={a.id}
+                          href={a.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group relative block overflow-hidden rounded-2xl border border-zinc-100 dark:border-zinc-800"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded, arbitrary remote URL */}
+                          <img src={a.fileUrl} alt={a.fileName} className="h-32 w-full object-cover" />
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              onRemoveAttachment?.(a.id);
+                            }}
+                            aria-label="הסרת הקובץ"
+                            className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                          >
+                            <X size={14} />
+                          </button>
+                        </a>
+                      ) : (
+                        <div
+                          key={a.id}
+                          className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2.5"
+                        >
+                          <FileText size={18} className="shrink-0 text-ink-soft dark:text-ink-dark-soft" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-semibold text-ink dark:text-ink-dark">{a.fileName}</p>
+                            <p className="text-[10px] text-ink-soft dark:text-ink-dark-soft">
+                              {formatFileSize(a.sizeBytes)}
+                              {uploader ? ` · ${uploader.name}` : ""}
+                            </p>
+                          </div>
+                          <a
+                            href={a.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="הורדה"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-soft dark:text-ink-dark-soft hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                          >
+                            <Download size={15} />
+                          </a>
+                          <button
+                            onClick={() => onRemoveAttachment?.(a.id)}
+                            aria-label="הסרת הקובץ"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <button
+                  onClick={handlePickFile}
+                  disabled={uploadingFile}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-600 py-2.5 text-xs font-semibold text-ink-soft dark:text-ink-dark-soft disabled:opacity-60"
+                >
+                  {uploadingFile ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                  {uploadingFile ? "מעלה..." : "הוספת קובץ או תמונה"}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                {fileError && <p className="mt-1.5 text-[11px] text-rose-600 dark:text-rose-400">{fileError}</p>}
+              </div>
 
               {/* Comments */}
               <div className="border-t border-zinc-100 dark:border-zinc-800 pt-5">

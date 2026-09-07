@@ -21,7 +21,11 @@ export default function BottomNav({ base }: { base: "staff" | "manager" }) {
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-zinc-100 dark:border-zinc-800 bg-white/90 dark:bg-surface-dark-card/90 backdrop-blur-md px-6 pb-[env(safe-area-inset-bottom)] pt-2">
+    // max-w-md here used to be a leftover mismatch: most pages that render this nav are now
+    // md:max-w-3xl (see app/*/page.tsx), and a narrower fixed nav below a wider page card left
+    // its content visibly peeking out on both sides at desktop widths. Matching it here keeps
+    // the nav's edges aligned with the card above it.
+    <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md md:max-w-3xl border-t border-zinc-100 dark:border-zinc-800 bg-white/90 dark:bg-surface-dark-card/90 backdrop-blur-md px-6 pb-[env(safe-area-inset-bottom)] pt-2">
       <div className="flex items-center justify-around">
         {tabs.map(({ href, label, icon: Icon, active }) => (
           <Link

@@ -1,11 +1,26 @@
 import { TeamMember, Task, STATUS_LABELS, PRIORITY_COLORS } from "./types";
 
+/** First word of a full name — used in the quick-assign picker instead of 2-letter initials
+ *  (e.g. "חן" instead of "חק"), which people found hard to tell apart at a glance once names
+ *  became "first + last" instead of just a first name. */
+export function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? fullName;
+}
+
 /** Builds a CSV file from tasks (Excel-compatible) and triggers a browser download. */
 export function exportTasksToCsv(tasks: Task[], team: TeamMember[], filename = "משימות.csv") {
   const findName = (id: string) => team.find((m) => m.id === id)?.name ?? id;
   const headers = ["שם המשימה", "תיאור", "אחראי/ת", "דדליין", "סטטוס", "דחיפות"];
 
-  const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  // Guards against CSV/formula injection: a task title/description starting with =, +, -, @,
+  // tab, or CR is otherwise interpreted as a live formula the instant Excel opens this file
+  // (e.g. a title of `=cmd|'/c calc'!A1`) — prefixing with a single quote forces it to render
+  // as plain text instead, per the standard OWASP CSV-injection mitigation.
+  const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+  const escapeCell = (value: string) => {
+    const guarded = FORMULA_PREFIXES.some((p) => value.startsWith(p)) ? `'${value}` : value;
+    return `"${guarded.replace(/"/g, '""')}"`;
+  };
 
   const rows = tasks.map((t) =>
     [

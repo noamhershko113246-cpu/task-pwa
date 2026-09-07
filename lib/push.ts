@@ -20,6 +20,21 @@ export async function getNotificationPermission(): Promise<NotificationPermissio
   return Notification.permission;
 }
 
+/** Whether THIS browser/device currently has an active push subscription (independent of the
+ *  OS-level Notification permission, which can be "granted" while the user has turned the
+ *  in-app toggle off — that state lives here, not in Notification.permission). */
+export async function isPushSubscribed(): Promise<boolean> {
+  if (!pushSupported()) return false;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+    if (!registration) return false;
+    const subscription = await registration.pushManager.getSubscription();
+    return !!subscription;
+  } catch {
+    return false;
+  }
+}
+
 /** Registers the service worker, requests permission, subscribes to push, and saves the subscription for this user. */
 export async function enablePushNotifications(userId: string): Promise<{ ok: boolean; reason?: string }> {
   if (!pushSupported()) return { ok: false, reason: "הדפדפן הזה לא תומך בהתראות" };
@@ -57,4 +72,26 @@ export async function enablePushNotifications(userId: string): Promise<{ ok: boo
   );
 
   return { ok: true };
+}
+
+/** Unsubscribes THIS browser/device from push and removes its row from push_subscriptions,
+ *  so the server stops sending it notifications. The OS-level Notification permission itself
+ *  can't be revoked from JS (only the user can do that from browser/system settings) — this
+ *  is the in-app "turn notifications off" toggle, independent of that. Only this device's
+ *  subscription (matched by endpoint) is removed, never other devices this user is signed
+ *  into elsewhere. */
+export async function disablePushNotifications(userId: string): Promise<{ ok: boolean; reason?: string }> {
+  if (!pushSupported()) return { ok: false, reason: "הדפדפן הזה לא תומך בהתראות" };
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+    const subscription = await registration?.pushManager.getSubscription();
+    if (subscription) {
+      const endpoint = subscription.endpoint;
+      await subscription.unsubscribe();
+      await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint).eq("user_id", userId);
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "לא ניתן היה לכבות את ההתראות" };
+  }
 }

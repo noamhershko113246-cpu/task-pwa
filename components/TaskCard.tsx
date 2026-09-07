@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
-import { Check, Calendar, AlertCircle } from "lucide-react";
+import { Check, Calendar, AlertCircle, Paperclip } from "lucide-react";
 import { Task } from "@/lib/types";
 import { formatDeadline, isOverdue } from "@/lib/utils";
 import { useConfetti } from "@/hooks/useConfetti";
@@ -115,6 +115,12 @@ export default function TaskCard({
               </span>
             )}
             <PriorityBadge priority={task.priority} />
+            {(task.attachments?.length ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 font-medium text-ink-soft dark:text-ink-dark-soft">
+                <Paperclip size={13} />
+                {task.attachments!.length}
+              </span>
+            )}
           </div>
         </div>
       </motion.div>

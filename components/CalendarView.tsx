@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus } from "lucide-react";
 import { Task, TeamMember, PRIORITY_COLORS } from "@/lib/types";
 import { monthLabel, localDateKey } from "@/lib/utils";
 import HistoryTaskRow from "./HistoryTaskRow";
@@ -19,10 +19,14 @@ export default function CalendarView({
   tasks,
   team,
   onOpenTask,
+  onAddTask,
 }: {
   tasks: Task[];
   team: TeamMember[];
   onOpenTask: (task: Task) => void;
+  /** Called with the selected day ("YYYY-MM-DD") when the user wants to create a task for it
+   *  right from the calendar, instead of going back to the task list and picking a date there. */
+  onAddTask?: (dateKey: string) => void;
 }) {
   const [month, setMonth] = useState(new Date());
   const todayKey = toDateKey(new Date());
@@ -142,9 +146,20 @@ export default function CalendarView({
       </div>
 
       <div>
-        <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wide text-ink-soft dark:text-ink-dark-soft">
-          {selectedTasks.length === 0 ? "אין משימות ביום הזה" : `משימות ליום זה (${selectedTasks.length})`}
-        </p>
+        <div className="mb-2 flex items-center justify-between px-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-soft dark:text-ink-dark-soft">
+            {selectedTasks.length === 0 ? "אין משימות ביום הזה" : `משימות ליום זה (${selectedTasks.length})`}
+          </p>
+          {onAddTask && (
+            <button
+              onClick={() => onAddTask(selectedDay)}
+              className="flex items-center gap-1 rounded-full bg-brand-50 dark:bg-brand-500/10 px-2.5 py-1 text-xs font-bold text-brand-600 dark:text-brand-300 transition-transform active:scale-95"
+            >
+              <Plus size={13} />
+              משימה ליום זה
+            </button>
+          )}
+        </div>
         <div className="space-y-2">
           {selectedTasks.map((task) => (
             <HistoryTaskRow

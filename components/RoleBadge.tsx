@@ -1,4 +1,4 @@
-import { Crown, ShieldCheck, Sparkles } from "lucide-react";
+import { Crown, ShieldCheck, Sparkles, KeyRound } from "lucide-react";
 import { TeamMember, DEFAULT_DEPARTMENT } from "@/lib/types";
 import clsx from "clsx";
 
@@ -11,6 +11,23 @@ function unitSuffix(member: Pick<TeamMember, "department" | "brigade">): string 
 export default function RoleBadge({ member, className }: { member: TeamMember; className?: string }) {
   const unit = unitSuffix(member);
 
+  // Checked first and shown on its own: a super admin (e.g. Noam) bypasses rank
+  // and department entirely, but that's a hidden system-wide permission, not a
+  // promotion — she keeps her actual rank (often "soldier") everywhere else, so
+  // this badge says exactly what she has without also claiming to be קמשא/מפקד/ת.
+  if (member.isSuperAdmin) {
+    return (
+      <span
+        className={clsx(
+          "inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+          className
+        )}
+      >
+        <KeyRound size={12} strokeWidth={2.5} />
+        Super Admin
+      </span>
+    );
+  }
   if (member.isSuperManager) {
     return (
       <span

@@ -52,7 +52,7 @@ export default function LoginPage() {
           <span className="flex-1 bg-unit-green" />
         </div>
         <h1 className="mt-3 text-2xl font-extrabold text-ink dark:text-ink-dark">משימות המשרד</h1>
-        <p className="mt-1.5 text-sm text-ink-soft dark:text-ink-dark-soft">התחברות עם השם שלך</p>
+        <p className="mt-1.5 text-sm text-ink-soft dark:text-ink-dark-soft">התחברות עם השם המלא שלך</p>
       </motion.div>
 
       <motion.div
@@ -62,7 +62,7 @@ export default function LoginPage() {
         className="space-y-4"
       >
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם</label>
+          <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם מלא</label>
           <div className="relative">
             <User size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
@@ -70,7 +70,7 @@ export default function LoginPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              placeholder="הקלד/י את שמך"
+              placeholder="שם פרטי ושם משפחה"
               className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card py-3 pr-11 pl-4 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 outline-none transition-colors"
             />
           </div>

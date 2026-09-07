@@ -17,6 +17,7 @@ import { Task, TeamMember, TaskStatus, STATUS_LABELS } from "@/lib/types";
 import { formatDeadline, isOverdue } from "@/lib/utils";
 import PriorityBadge from "./PriorityBadge";
 import Avatar from "./Avatar";
+import { Paperclip } from "lucide-react";
 import clsx from "clsx";
 
 const COLUMNS: TaskStatus[] = ["todo", "in_progress", "stuck", "done"];
@@ -63,7 +64,15 @@ function KanbanCard({
       </div>
       <p className="text-sm font-semibold leading-snug text-ink dark:text-ink-dark">{task.title}</p>
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-[11px] text-ink-soft dark:text-ink-dark-soft">{formatDeadline(task.deadline)}</span>
+        <span className="flex items-center gap-1.5 text-[11px] text-ink-soft dark:text-ink-dark-soft">
+          {formatDeadline(task.deadline)}
+          {(task.attachments?.length ?? 0) > 0 && (
+            <span className="flex items-center gap-0.5">
+              <Paperclip size={11} />
+              {task.attachments!.length}
+            </span>
+          )}
+        </span>
         <div className="flex -space-x-1.5 space-x-reverse">
           {assignees.slice(0, 3).map((a) => (
             <Avatar key={a.id} member={a} size="sm" ring />

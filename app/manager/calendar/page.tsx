@@ -4,19 +4,22 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { Task, getVisibleScope } from "@/lib/types";
+import { getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
 import CalendarView from "@/components/CalendarView";
 import TaskDetailSheet from "@/components/TaskDetailSheet";
+import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 
 function ManagerCalendarInner() {
   const router = useRouter();
-  const { tasks, team, loading, updateTask, deleteTask, addComment } = useTaskStore();
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const { tasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const detailTask = detailTaskId ? tasks.find((t) => t.id === detailTaskId) ?? null : null;
+  const [createDate, setCreateDate] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const me = team.find((m) => m.id === sessionUserId);
 
@@ -28,7 +31,7 @@ function ManagerCalendarInner() {
       return;
     }
     const sessionMember = team.find((m) => m.id === session.userId);
-    if (!sessionMember?.isManager) {
+    if (!sessionMember?.isManager && !sessionMember?.isSuperAdmin) {
       router.replace(`/staff?user=${session.userId}`);
       return;
     }
@@ -42,7 +45,7 @@ function ManagerCalendarInner() {
   const visibleTasks = tasks.filter((t) => t.status !== "cancelled" && t.assigneeIds.some((id) => visibleIds.has(id)));
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <header className="mb-5 flex items-center justify-between">
         <AppHeader title="לוח שנה" subtitle="דד-ליינים של כל המשרד" />
         <Link
@@ -57,7 +60,8 @@ function ManagerCalendarInner() {
       <CalendarView
         tasks={visibleTasks}
         team={team}
-        onOpenTask={setDetailTask}
+        onOpenTask={(t) => setDetailTaskId(t.id)}
+        onAddTask={(dateKey) => setCreateDate(dateKey)}
       />
 
       <TaskDetailSheet
@@ -65,10 +69,20 @@ function ManagerCalendarInner() {
         team={team}
         assignableTeam={assignableTeam}
         currentUserId={me.id}
-        onClose={() => setDetailTask(null)}
-        onUpdate={updateTask}
+        onClose={() => setDetailTaskId(null)}
+        onUpdate={(id, patch) => updateTask(id, patch, me.id)}
         onDelete={deleteTask}
         onAddComment={addComment}
+        onAddAttachment={addAttachment}
+        onRemoveAttachment={removeAttachment}
+      />
+
+      <CreateTaskSheet
+        open={createDate !== null}
+        onClose={() => setCreateDate(null)}
+        team={assignableTeam}
+        initialDate={createDate ?? undefined}
+        onCreate={(newTasks) => createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })))}
       />
 
       <BottomNav base="manager" />

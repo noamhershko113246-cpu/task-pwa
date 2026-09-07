@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, ShieldCheck } from "lucide-react";
-import { Task, Priority, getVisibleScope } from "@/lib/types";
+import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import AppHeader from "@/components/AppHeader";
@@ -16,11 +16,12 @@ import LoadingScreen from "@/components/LoadingScreen";
 import clsx from "clsx";
 
 function ManagerHistoryInner() {
-  const { tasks, team, loading, updateTask, deleteTask, addComment } = useTaskStore();
+  const { tasks, team, loading, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const [groupBy, setGroupBy] = useState<"member" | "day">("member");
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const detailTask = detailTaskId ? tasks.find((t) => t.id === detailTaskId) ?? null : null;
   const session = getSession();
   const me = team.find((m) => m.id === session?.userId);
 
@@ -31,7 +32,7 @@ function ManagerHistoryInner() {
   const visibleTasks = tasks.filter((t) => t.assigneeIds.some((id) => visibleIds.has(id)));
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <header className="mb-5 flex items-center justify-between">
         <AppHeader title="היסטוריית משימות" subtitle="כל המשרד" />
         <Link
@@ -85,7 +86,7 @@ function ManagerHistoryInner() {
         groupBy={groupBy}
         searchQuery={query}
         priorityFilter={priorityFilter}
-        onOpenTask={setDetailTask}
+        onOpenTask={(t) => setDetailTaskId(t.id)}
       />
 
       <TaskDetailSheet
@@ -93,10 +94,12 @@ function ManagerHistoryInner() {
         team={team}
         assignableTeam={assignableTeam}
         currentUserId={me.id}
-        onClose={() => setDetailTask(null)}
-        onUpdate={updateTask}
+        onClose={() => setDetailTaskId(null)}
+        onUpdate={(id, patch) => updateTask(id, patch, me.id)}
         onDelete={deleteTask}
         onAddComment={addComment}
+        onAddAttachment={addAttachment}
+        onRemoveAttachment={removeAttachment}
       />
 
       <BottomNav base="manager" />

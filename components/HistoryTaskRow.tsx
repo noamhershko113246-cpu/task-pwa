@@ -3,7 +3,7 @@ import { formatCompletedAt } from "@/lib/utils";
 import StatusBadge from "./StatusBadge";
 import Avatar from "./Avatar";
 import PriorityBadge from "./PriorityBadge";
-import { Calendar } from "lucide-react";
+import { Calendar, Paperclip } from "lucide-react";
 
 export default function HistoryTaskRow({
   task,
@@ -46,6 +46,12 @@ export default function HistoryTaskRow({
           <p className="truncate text-xs text-ink-soft dark:text-ink-dark-soft">{task.description}</p>
         )}
       </div>
+      {(task.attachments?.length ?? 0) > 0 && (
+        <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-ink-soft dark:text-ink-dark-soft">
+          <Paperclip size={12} />
+          {task.attachments!.length}
+        </span>
+      )}
       <StatusBadge status={task.status} className="shrink-0" />
     </div>
   );

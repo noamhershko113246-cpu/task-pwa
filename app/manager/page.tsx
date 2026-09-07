@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2, Settings } from "lucide-react";
-import { Task, Priority, getVisibleScope, DEFAULT_DEPARTMENT } from "@/lib/types";
+import { Priority, getVisibleScope, DEFAULT_DEPARTMENT } from "@/lib/types";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -31,9 +31,12 @@ import clsx from "clsx";
 
 function ManagerDashboardInner() {
   const router = useRouter();
-  const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment } = useTaskStore();
+  const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  // Looked up live from `tasks` (not snapshotted at click-time) so the open sheet
+  // reflects remote changes — e.g. a comment or status update from someone else — while it's open.
+  const detailTask = useMemo(() => (detailTaskId ? tasks.find((t) => t.id === detailTaskId) ?? null : null), [tasks, detailTaskId]);
   const [triageOpen, setTriageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -41,7 +44,8 @@ function ManagerDashboardInner() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const me = team.find((m) => m.id === sessionUserId);
 
-  // Auth guard: only a logged-in manager-tier person (manager or super-manager) may see this dashboard.
+  // Auth guard: only a logged-in manager-tier person (manager, super-manager, or
+  // a rank-independent super admin like Noam) may see this dashboard.
   useEffect(() => {
     if (loading) return; // wait for team data before deciding
     const session = getSession();
@@ -50,7 +54,7 @@ function ManagerDashboardInner() {
       return;
     }
     const sessionMember = team.find((m) => m.id === session.userId);
-    if (!sessionMember?.isManager) {
+    if (!sessionMember?.isManager && !sessionMember?.isSuperAdmin) {
       router.replace(`/staff?user=${session.userId}`);
       return;
     }
@@ -123,11 +127,16 @@ function ManagerDashboardInner() {
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <AppBackground member={me} />
-      <header className="mb-3 flex items-center justify-between">
+      {/* Two rows, not one: with 5 action icons this row genuinely doesn't fit next to the
+          title on a ~360px-wide phone (the common Android width) — cramming both into one
+          flex row just forced the title down to 1-2 illegible truncated characters instead.
+          Stacking guarantees the title stays fully readable and every icon stays full-size,
+          on any screen width, at the cost of a bit of extra header height. */}
+      <header className="mb-3 space-y-2">
         <AppHeader title="לוח פיקוד" subtitle={`שלום ${me.name},`} />
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
           <NotificationBell userId={me.id} />
           <button
             onClick={() => setSettingsOpen(true)}
@@ -173,6 +182,7 @@ function ManagerDashboardInner() {
           const unit = me.department && me.department !== DEFAULT_DEPARTMENT
             ? `${me.department}${me.brigade ? " · " + me.brigade : ""}`
             : "המשרד";
+          if (me.isSuperAdmin) return "כ-Super Admin, יש לך גישה מלאה לכל המשימות והמשתמשים בכל היחידות";
           return me.isSuperManager
             ? `כקמשא, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
             : `כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי ${unit}`;
@@ -223,7 +233,7 @@ function ManagerDashboardInner() {
             filteredResults.map((task) => {
               const assignees = team.filter((m) => task.assigneeIds.includes(m.id));
               return (
-                <HistoryTaskRow key={task.id} task={task} assignees={assignees} onClick={setDetailTask} />
+                <HistoryTaskRow key={task.id} task={task} assignees={assignees} onClick={(t) => setDetailTaskId(t.id)} />
               );
             })
           )}
@@ -303,7 +313,7 @@ function ManagerDashboardInner() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => setDetailTask(task)}
+                      onClick={() => setDetailTaskId(task.id)}
                       className="flex items-center gap-3 rounded-2xl border border-rose-200/70 dark:border-rose-500/20 bg-rose-50/70 dark:bg-rose-500/10 p-3.5 animate-pulse-soft"
                     >
                       <PriorityBadge priority={task.priority} variant="dot" />
@@ -334,14 +344,28 @@ function ManagerDashboardInner() {
         </>
       )}
 
-      {/* Floating create-task button, sitting above the bottom nav */}
-      <button
-        onClick={() => setSheetOpen(true)}
-        className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
-      >
-        <Plus size={20} strokeWidth={2.5} />
-        משימה חדשה
-      </button>
+      {/* Floating create-task button, sitting above the bottom nav — paired with a smaller,
+          plainer calendar shortcut just to its left, so getting to day-by-day task creation
+          (see /manager/calendar's own "+" per day) doesn't require scrolling back up to the
+          "לוח שנה" card every time. DOM order matters here: this pill renders first so it sits
+          on the right in RTL, with the round calendar button after it, to its left. */}
+      <div className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3">
+        <button
+          onClick={() => setSheetOpen(true)}
+          className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+        >
+          <Plus size={20} strokeWidth={2.5} />
+          משימה חדשה
+        </button>
+        <Link
+          href="/manager/calendar"
+          aria-label="לוח שנה"
+          title="לוח שנה"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card text-ink-soft shadow-lg transition-transform active:scale-95"
+        >
+          <CalendarDays size={19} />
+        </Link>
+      </div>
 
       <CreateTaskSheet
         open={sheetOpen}
@@ -355,10 +379,12 @@ function ManagerDashboardInner() {
         team={team}
         assignableTeam={assignableTeam}
         currentUserId={me.id}
-        onClose={() => setDetailTask(null)}
-        onUpdate={updateTask}
+        onClose={() => setDetailTaskId(null)}
+        onUpdate={(id, patch) => updateTask(id, patch, me.id)}
         onDelete={deleteTask}
         onAddComment={addComment}
+        onAddAttachment={addAttachment}
+        onRemoveAttachment={removeAttachment}
       />
 
       <AITriageSheet
@@ -368,7 +394,7 @@ function ManagerDashboardInner() {
         onClose={() => setTriageOpen(false)}
         onOpenDetail={(task) => {
           setTriageOpen(false);
-          setDetailTask(task);
+          setDetailTaskId(task.id);
         }}
       />
 

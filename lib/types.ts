@@ -27,6 +27,7 @@ export interface TeamMember {
   initials: string;
   colorFrom: string; // tailwind gradient stop, e.g. "from-indigo-400"
   colorTo: string; // e.g. "to-indigo-600"
+  avatarUrl?: string | null; // uploaded profile photo (Supabase Storage "avatars" bucket) — shown instead of the initials/gradient circle when set
   isManager?: boolean;
   isSuperManager?: boolean; // manages the manager(s) too — sees/edits literally everyone
   phone: string; // used for phone-number login — each person signs into their own account only
@@ -45,6 +46,8 @@ export interface TeamMember {
   department?: string; // e.g. 'משא"ן' (HR, the original/default team) or 'טנ"א' (Maintenance) — isolates each unit's people and tasks from every other unit
   brigade?: string | null; // display-only sub-unit, e.g. "חטיבה 14" — does not affect visibility, department is what isolates
   isSuperAdmin?: boolean; // system-wide override: bypasses department isolation AND rank entirely — sees/manages every unit, every rank, no exceptions. Distinct from isSuperManager (which is scoped to one department).
+  title?: string | null; // display-only job title, e.g. "קצינת סגל" — purely descriptive, does not affect permissions or visibility
+  proxyIds?: string[]; // "stand-in" grant: these team_member ids may create/manage tasks for THIS person and open their /staff page, regardless of rank (e.g. a soldier standing in for her own manager). Granted self-service by this person, e.g. in Settings — not by whoever receives the access.
 }
 
 /** Access tier used to decide who can view/edit whose tasks. Higher outranks lower. */
@@ -57,40 +60,61 @@ export function memberRank(m: Pick<TeamMember, "isManager" | "isSuperManager">):
 /**
  * The set of people a given viewer may assign tasks to and see the tasks of:
  * themselves, plus everyone ranked strictly below them who reports to her,
- * within her own department/unit.
+ * within her own department/unit — plus anyone who has explicitly granted her
+ * "stand-in" (proxy) access to their own account, rank notwithstanding.
  *   - super-admin (isSuperAdmin) → the entire team, full stop. No department
  *     wall, no rank ceiling — this is the one tier that spans every unit.
  *   - department (משא"ן / טנ"א / ...) → otherwise a hard wall first: nobody outside the
- *     viewer's own department is ever visible, super-manager included. Each
- *     unit is its own isolated workspace. Unset department = DEFAULT_DEPARTMENT,
- *     so every member who predates this field keeps exactly today's behavior.
+ *     viewer's own department is ever visible, super-manager and proxy grants
+ *     included. Each unit is its own isolated workspace. Unset department =
+ *     DEFAULT_DEPARTMENT, so every member who predates this field keeps
+ *     exactly today's behavior.
+ *   - proxy ("ממלא/ת מקום") → anyone in her department who listed her in their
+ *     OWN proxyIds is visible too, regardless of rank in either direction —
+ *     e.g. a soldier a manager explicitly trusted to stand in for him. This is
+ *     the one relationship that isn't derived from rank/managerId at all: it's
+ *     granted self-service by the target, one person at a time.
  *   - super-manager (קמשא) → everyone in her department, regardless of managerId
  *   - manager (מפקדת) → herself + soldiers ranked below her, in her department,
  *     whose managerId is either unset (visible to every manager in the
  *     department — the pre-existing default, so nobody who already existed
  *     before managerId was introduced changes visibility) or equals her own id
  *     (assigned specifically to her)
- *   - soldier (חייל/ת) → only themselves
+ *   - soldier (חייל/ת) → only themselves (plus any proxy grants, above)
  */
 export function getVisibleScope(viewer: TeamMember, team: TeamMember[]): TeamMember[] {
   if (viewer.isSuperAdmin) return team;
   const myRank = memberRank(viewer);
   const myDept = viewer.department ?? DEFAULT_DEPARTMENT;
   const sameDept = (m: TeamMember) => (m.department ?? DEFAULT_DEPARTMENT) === myDept;
-  if (viewer.isSuperManager) {
-    return team.filter((m) => m.id === viewer.id || (memberRank(m) < myRank && sameDept(m)));
-  }
-  return team.filter(
-    (m) =>
-      m.id === viewer.id ||
-      (memberRank(m) < myRank && sameDept(m) && (!m.managerId || m.managerId === viewer.id))
-  );
+  const rankBased = viewer.isSuperManager
+    ? team.filter((m) => m.id === viewer.id || (memberRank(m) < myRank && sameDept(m)))
+    : team.filter(
+        (m) =>
+          m.id === viewer.id ||
+          (memberRank(m) < myRank && sameDept(m) && (!m.managerId || m.managerId === viewer.id))
+      );
+  const proxyTargets = team.filter((m) => sameDept(m) && (m.proxyIds ?? []).includes(viewer.id));
+  if (proxyTargets.length === 0) return rankBased;
+  const seen = new Set(rankBased.map((m) => m.id));
+  return [...rankBased, ...proxyTargets.filter((m) => !seen.has(m.id))];
 }
 
 export interface Comment {
   id: string;
   userId: string;
   text: string;
+  timestamp: string; // ISO
+}
+
+export interface Attachment {
+  id: string;
+  taskId: string;
+  uploadedBy?: string;
+  fileUrl: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
   timestamp: string; // ISO
 }
 
@@ -108,6 +132,7 @@ export interface Task {
   previousStatus?: TaskStatus; // used to support "undo complete"
   completedAt?: string; // ISO timestamp — set when status becomes "done", cleared otherwise
   comments?: Comment[];
+  attachments?: Attachment[];
 }
 
 export interface ActivityEvent {

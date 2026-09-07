@@ -13,7 +13,13 @@ export default function AppHeader({
   const logoSize = size === "lg" ? 56 : size === "sm" ? 36 : 44;
 
   return (
-    <div className="flex items-center gap-3">
+    // min-w-0 here is required, not decorative: without it, this flex item's default
+    // min-width:auto refuses to shrink below the title/subtitle's unwrapped text width, so
+    // `truncate` below never actually engages — the row it sits in (title+subtitle vs. a
+    // fixed-width row of header icon buttons) then only fits when there's already enough
+    // room, which silently broke on narrow ~360px Android screens once names grew to
+    // "first + last" and stopped fitting a manager dashboard's 5-icon header.
+    <div className="flex min-w-0 items-center gap-3">
       <div
         className="relative shrink-0 overflow-hidden rounded-2xl ring-1 ring-black/5 dark:ring-white/10 shadow-soft"
         style={{ width: logoSize, height: logoSize }}
@@ -22,7 +28,7 @@ export default function AppHeader({
       </div>
       <div className="min-w-0">
         {subtitle && (
-          <p className="text-xs font-medium text-ink-soft dark:text-ink-dark-soft">{subtitle}</p>
+          <p className="truncate text-xs font-medium text-ink-soft dark:text-ink-dark-soft">{subtitle}</p>
         )}
         <h1
           className={clsx(

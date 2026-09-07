@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Lock, Eye } from "lucide-react";
-import { Task, Priority, getVisibleScope } from "@/lib/types";
+import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
 import AppHeader from "@/components/AppHeader";
@@ -18,7 +18,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 function StaffHistoryInner() {
   const searchParams = useSearchParams();
   const userId = searchParams.get("user") ?? "noam";
-  const { tasks: allTasks, team, loading, updateTask, deleteTask, addComment } = useTaskStore();
+  const { tasks: allTasks, team, loading, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const member = team.find((m) => m.id === userId) ?? team[1] ?? team[0];
   const session = getSession();
   const viewingAsManager = Boolean(session && session.userId !== userId);
@@ -27,7 +27,8 @@ function StaffHistoryInner() {
 
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const detailTask = detailTaskId ? myTasks.find((t) => t.id === detailTaskId) ?? null : null;
 
   if (loading || !member) return <LoadingScreen />;
 
@@ -35,7 +36,7 @@ function StaffHistoryInner() {
   const assignableTeam = getVisibleScope(viewerMember, team);
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <header className="mb-5 flex items-center justify-between">
         <AppHeader title="היסטוריית משימות" subtitle={member.name} />
         <Link
@@ -73,7 +74,7 @@ function StaffHistoryInner() {
         team={team}
         searchQuery={query}
         priorityFilter={priorityFilter}
-        onOpenTask={setDetailTask}
+        onOpenTask={(t) => setDetailTaskId(t.id)}
       />
 
       <TaskDetailSheet
@@ -81,10 +82,12 @@ function StaffHistoryInner() {
         team={team}
         assignableTeam={assignableTeam}
         currentUserId={session?.userId ?? userId}
-        onClose={() => setDetailTask(null)}
-        onUpdate={updateTask}
+        onClose={() => setDetailTaskId(null)}
+        onUpdate={(id, patch) => updateTask(id, patch, session?.userId)}
         onDelete={deleteTask}
         onAddComment={addComment}
+        onAddAttachment={addAttachment}
+        onRemoveAttachment={removeAttachment}
       />
 
       <BottomNav base="staff" />

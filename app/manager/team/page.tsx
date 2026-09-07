@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, UserPlus, Trash2, AlertTriangle, Building2, Pencil } from "lucide-react";
@@ -11,18 +11,21 @@ import AppHeader from "@/components/AppHeader";
 import Avatar from "@/components/Avatar";
 import RoleBadge from "@/components/RoleBadge";
 import LoadingScreen from "@/components/LoadingScreen";
+import BottomNav from "@/components/BottomNav";
 
-export default function TeamManagementPage() {
+function TeamManagementInner() {
   const router = useRouter();
   const { team, tasks, loading, addMember, updateMember, removeMember } = useTaskStore();
   const [name, setName] = useState("");
   const [newDept, setNewDept] = useState("");
   const [newBrigade, setNewBrigade] = useState("");
+  const [newTitle, setNewTitle] = useState("");
   const [error, setError] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [editDept, setEditDept] = useState("");
   const [editBrigade, setEditBrigade] = useState("");
+  const [editTitle, setEditTitle] = useState("");
   const [session, setSessionState] = useState<ReturnType<typeof getSession>>(null);
 
   // Auth guard: a logged-in manager sees the full screen (add + manage + remove).
@@ -38,7 +41,7 @@ export default function TeamManagementPage() {
       return;
     }
     const sessionMember = team.find((m) => m.id === s.userId);
-    if (!sessionMember?.isManager && !sessionMember?.canAddMembers) {
+    if (!sessionMember?.isManager && !sessionMember?.canAddMembers && !sessionMember?.isSuperAdmin) {
       router.replace(`/staff?user=${s.userId}`);
     }
   }, [router, team, loading]);
@@ -77,18 +80,36 @@ export default function TeamManagementPage() {
       setError("יש למלא שם");
       return;
     }
+    // Login now requires a full name (first + last), not just a first name — mainly to keep
+    // logins unique and unambiguous as the team grows and first names repeat. A single word
+    // (no space) is rejected outright, regardless of how many characters it has.
+    const nameParts = trimmedName.split(/\s+/).filter(Boolean);
+    if (nameParts.length < 2) {
+      setError("יש להזין שם מלא — שם פרטי ושם משפחה");
+      return;
+    }
     // Login is by name globally, across every department, so the uniqueness
     // check has to run against the whole team — not just this unit's roster.
-    if (team.some((m) => m.name.trim() === trimmedName)) {
+    // Checked against BOTH the current display name AND loginKeyword (not just
+    // name): login actually matches on loginKeyword, and the two can diverge —
+    // e.g. someone's displayed name changed but their loginKeyword didn't. A new
+    // member whose name only collides with an old loginKeyword would otherwise
+    // pass this check yet still get rejected by the DB's unique constraint on
+    // login_keyword, with a confusing generic error — or worse, could let two
+    // people be confused about whose account is whose.
+    const nameTaken = team.some((m) => m.name.trim() === trimmedName || m.loginKeyword === trimmedName);
+    if (nameTaken) {
       setError("כבר יש איש/אשת צוות עם השם הזה — לכניסה עם שם צריך שם ייחודי");
       return;
     }
     const department = isSuperAdmin ? newDept.trim() || DEFAULT_DEPARTMENT : myDept;
     const brigade = isSuperAdmin ? newBrigade.trim() || null : viewer?.brigade ?? null;
-    addMember(trimmedName, department, brigade);
+    const title = isSuperAdmin ? newTitle.trim() || null : null;
+    addMember(trimmedName, department, brigade, title);
     setName("");
     setNewDept("");
     setNewBrigade("");
+    setNewTitle("");
   };
 
   const handleRemove = (id: string) => {
@@ -100,18 +121,19 @@ export default function TeamManagementPage() {
     setEditingDeptId(member.id);
     setEditDept(member.department ?? DEFAULT_DEPARTMENT);
     setEditBrigade(member.brigade ?? "");
+    setEditTitle(member.title ?? "");
   };
 
   const saveEditDept = (id: string) => {
     const department = editDept.trim() || DEFAULT_DEPARTMENT;
-    updateMember(id, { department, brigade: editBrigade.trim() || null });
+    updateMember(id, { department, brigade: editBrigade.trim() || null, title: editTitle.trim() || null });
     setEditingDeptId(null);
   };
 
   const taskCountFor = (id: string) => tasks.filter((t) => t.assigneeIds.includes(id)).length;
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-4 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <header className="mb-5 flex items-center justify-between">
         <AppHeader
           title={isSuperAdmin ? "ניהול-על — כל היחידות" : "ניהול משרד"}
@@ -124,7 +146,7 @@ export default function TeamManagementPage() {
           }
         />
         <Link
-          href={isFullManager ? "/manager" : `/staff?user=${session?.userId ?? ""}`}
+          href={isFullManager || isSuperAdmin ? "/manager" : `/staff?user=${session?.userId ?? ""}`}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
           aria-label="חזרה"
         >
@@ -143,7 +165,7 @@ export default function TeamManagementPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder="שם מלא (זה גם מה שישמש להתחברות)"
+            placeholder="שם פרטי ושם משפחה (זה גם מה שישמש להתחברות)"
             className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
           />
           {isSuperAdmin && (
@@ -164,6 +186,12 @@ export default function TeamManagementPage() {
                 value={newBrigade}
                 onChange={(e) => setNewBrigade(e.target.value)}
                 placeholder="חטיבה / תת-יחידה (לא חובה)"
+                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+              />
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
                 className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
               />
             </>
@@ -206,6 +234,11 @@ export default function TeamManagementPage() {
                       <p className="truncate text-sm font-bold text-ink dark:text-ink-dark">{member.name}</p>
                       <RoleBadge member={member} />
                     </div>
+                    {member.title && (
+                      <p className="mt-0.5 truncate text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+                        {member.title}
+                      </p>
+                    )}
                     {(isFullManager || isSuperAdmin) && (
                       <p className="mt-0.5 text-xs text-ink-soft dark:text-ink-dark-soft">
                         {taskCountFor(member.id)} משימות
@@ -215,7 +248,7 @@ export default function TeamManagementPage() {
                   {isSuperAdmin && editingDeptId !== member.id && (
                     <button
                       onClick={() => startEditDept(member)}
-                      aria-label={`שינוי יחידה עבור ${member.name}`}
+                      aria-label={`עריכת פרטים עבור ${member.name}`}
                       className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     >
                       <Pencil size={15} />
@@ -245,6 +278,12 @@ export default function TeamManagementPage() {
                       value={editBrigade}
                       onChange={(e) => setEditBrigade(e.target.value)}
                       placeholder="חטיבה / תת-יחידה (לא חובה)"
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
+                    />
+                    <input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
                     />
                     <div className="flex gap-2">
@@ -294,6 +333,16 @@ export default function TeamManagementPage() {
           </div>
         </section>
       ))}
+
+      <BottomNav base={isFullManager || isSuperAdmin ? "manager" : "staff"} />
     </main>
+  );
+}
+
+export default function TeamManagementPage() {
+  return (
+    <Suspense fallback={null}>
+      <TeamManagementInner />
+    </Suspense>
   );
 }
