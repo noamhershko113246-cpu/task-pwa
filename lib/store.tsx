@@ -5,6 +5,7 @@ import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Prior
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
 import { removeTaskAttachmentFile } from "./attachments";
+import { HQ_UNIT } from "./orgStructure";
 
 // Exported so the Settings UI can offer the exact same palette as a picker, instead of only
 // ever being assigned round-robin at creation time.
@@ -55,7 +56,7 @@ interface TeamRow {
   manager_id: string | null;
   can_add_members: boolean;
   department: string;
-  brigade: string | null;
+  brigade: string; // NOT NULL in the DB, one of ORG_UNITS' keys — see lib/orgStructure.ts
   is_super_admin: boolean;
   title: string | null;
   avatar_url: string | null;
@@ -207,12 +208,17 @@ interface TaskStoreValue {
       workingHoursEnd?: string | null;
       overdueReminderIntervalMinutes?: number;
       department?: string;
-      brigade?: string | null;
+      brigade?: string; // required by the DB now — always one of ORG_UNITS' keys, never null
       title?: string | null;
       avatarUrl?: string | null;
       colorFrom?: string;
       colorTo?: string;
       proxyIds?: string[];
+      // Rank within a department (see lib/orgStructure.ts's DepartmentRank) and who this person
+      // reports to — both Super Admin-only to edit (enforced in the UI, not here).
+      isManager?: boolean;
+      isSuperManager?: boolean;
+      managerId?: string | null;
     }
   ) => void;
   removeMember: (id: string) => void;
@@ -619,7 +625,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         phone: `no-phone-login-${Date.now()}`,
         login_keyword: trimmedName,
         department: department ?? DEFAULT_DEPARTMENT,
-        brigade: brigade ?? null,
+        brigade: brigade ?? HQ_UNIT, // brigade is NOT NULL in the DB — no unit means "מפא"ג" by default
         title: title ?? null,
       });
       if (reportIfError(error, "הוספת החייל/ת")) return;
@@ -652,6 +658,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (patch.colorFrom !== undefined) dbPatch.color_from = patch.colorFrom;
       if (patch.colorTo !== undefined) dbPatch.color_to = patch.colorTo;
       if (patch.proxyIds !== undefined) dbPatch.proxy_ids = patch.proxyIds;
+      if (patch.isManager !== undefined) dbPatch.is_manager = patch.isManager;
+      if (patch.isSuperManager !== undefined) dbPatch.is_super_manager = patch.isSuperManager;
+      if (patch.managerId !== undefined) dbPatch.manager_id = patch.managerId;
       const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון הפרטים")) return;
       // Silent settings toggles (like the reminder popover) don't need their own

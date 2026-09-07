@@ -43,8 +43,8 @@ export interface TeamMember {
   overdueReminderIntervalMinutes?: number; // how often a still-open overdue task re-pings this person; 1440 = once a day
   managerId?: string | null; // direct manager's id; null/unset = visible to every manager (pre-existing default). A super-manager always sees everyone regardless of this.
   canAddMembers?: boolean; // narrow permission: lets a non-manager add new team members from the app, without granting manager-level visibility into anyone else's tasks
-  department?: string; // e.g. 'משא"ן' (HR, the original/default team) or 'טנ"א' (Maintenance) — isolates each unit's people and tasks from every other unit
-  brigade?: string | null; // display-only sub-unit, e.g. "חטיבה 14" — does not affect visibility, department is what isolates
+  department?: string; // e.g. 'משא"ן' (HR) or 'טנ"א' (Maintenance) — a department NAME, repeated across units on purpose (see brigade below)
+  brigade: string; // the unit, e.g. "חטיבה 14" or HQ_UNIT ('מפא"ג') — required (see lib/orgStructure.ts). Isolation is by the (brigade, department) PAIR, not department alone: 'משא"ן' of חטיבה 14 and 'משא"ן' of מפא"ג share a name but are fully separate, isolated department instances
   isSuperAdmin?: boolean; // system-wide override: bypasses department isolation AND rank entirely — sees/manages every unit, every rank, no exceptions. Distinct from isSuperManager (which is scoped to one department).
   title?: string | null; // display-only job title, e.g. "קצינת סגל" — purely descriptive, does not affect permissions or visibility
   proxyIds?: string[]; // "stand-in" grant: these team_member ids may create/manage tasks for THIS person and open their /staff page, regardless of rank (e.g. a soldier standing in for her own manager). Granted self-service by this person, e.g. in Settings — not by whoever receives the access.
@@ -64,11 +64,12 @@ export function memberRank(m: Pick<TeamMember, "isManager" | "isSuperManager">):
  * "stand-in" (proxy) access to their own account, rank notwithstanding.
  *   - super-admin (isSuperAdmin) → the entire team, full stop. No department
  *     wall, no rank ceiling — this is the one tier that spans every unit.
- *   - department (משא"ן / טנ"א / ...) → otherwise a hard wall first: nobody outside the
- *     viewer's own department is ever visible, super-manager and proxy grants
- *     included. Each unit is its own isolated workspace. Unset department =
- *     DEFAULT_DEPARTMENT, so every member who predates this field keeps
- *     exactly today's behavior.
+ *   - department instance (brigade + department, e.g. 'משא"ן of חטיבה 14') → otherwise a hard
+ *     wall first: nobody outside the viewer's own (brigade, department) PAIR is ever visible,
+ *     super-manager and proxy grants included. Department names repeat across units on purpose
+ *     ('משא"ן' of מפא"ג and 'משא"ן' of חטיבה 14 are two separate instances that share a name) —
+ *     so brigade is part of the wall, not just department. Unset department = DEFAULT_DEPARTMENT,
+ *     so every member who predates this field keeps exactly today's behavior.
  *   - proxy ("ממלא/ת מקום") → anyone in her department who listed her in their
  *     OWN proxyIds is visible too, regardless of rank in either direction —
  *     e.g. a soldier a manager explicitly trusted to stand in for him. This is
@@ -86,7 +87,9 @@ export function getVisibleScope(viewer: TeamMember, team: TeamMember[]): TeamMem
   if (viewer.isSuperAdmin) return team;
   const myRank = memberRank(viewer);
   const myDept = viewer.department ?? DEFAULT_DEPARTMENT;
-  const sameDept = (m: TeamMember) => (m.department ?? DEFAULT_DEPARTMENT) === myDept;
+  const myBrigade = viewer.brigade;
+  const sameDept = (m: TeamMember) =>
+    (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === myBrigade;
   const rankBased = viewer.isSuperManager
     ? team.filter((m) => m.id === viewer.id || (memberRank(m) < myRank && sameDept(m)))
     : team.filter(

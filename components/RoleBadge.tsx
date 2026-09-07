@@ -29,6 +29,11 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
     );
   }
   if (member.isSuperManager) {
+    // "מפקד/ת מדור" — deliberately generic, not a specific role name: the actual title (e.g.
+    // "קמשא" for a משא"ן commander, "קטא" for a טנ"א commander) belongs in this person's own
+    // `title` field and is shown separately. A hardcoded specific title here was wrong the
+    // moment a second department got its own commander — "קמשא" literally means "the משא"ן
+    // officer" and is factually false for anyone commanding a different department.
     return (
       <span
         className={clsx(
@@ -37,7 +42,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
         )}
       >
         <Sparkles size={12} strokeWidth={2.5} />
-        קמשא{unit}
+        מפקד/ת מדור{unit}
       </span>
     );
   }

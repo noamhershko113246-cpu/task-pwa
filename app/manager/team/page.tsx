@@ -6,7 +6,16 @@ import Link from "next/link";
 import { ChevronRight, UserPlus, Trash2, AlertTriangle, Building2, Pencil } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
-import { DEFAULT_DEPARTMENT, TeamMember } from "@/lib/types";
+import { DEFAULT_DEPARTMENT, memberRank, TeamMember } from "@/lib/types";
+import {
+  DepartmentRank,
+  flagsFromRank,
+  getDepartmentsForUnit,
+  HQ_UNIT,
+  ORG_UNITS,
+  RANK_LABELS,
+  rankFromFlags,
+} from "@/lib/orgStructure";
 import AppHeader from "@/components/AppHeader";
 import Avatar from "@/components/Avatar";
 import RoleBadge from "@/components/RoleBadge";
@@ -17,15 +26,17 @@ function TeamManagementInner() {
   const router = useRouter();
   const { team, tasks, loading, addMember, updateMember, removeMember } = useTaskStore();
   const [name, setName] = useState("");
-  const [newDept, setNewDept] = useState("");
-  const [newBrigade, setNewBrigade] = useState("");
+  const [newUnit, setNewUnit] = useState<string>(HQ_UNIT);
+  const [newDept, setNewDept] = useState<string>(getDepartmentsForUnit(HQ_UNIT)[0] ?? DEFAULT_DEPARTMENT);
   const [newTitle, setNewTitle] = useState("");
   const [error, setError] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
+  const [editUnit, setEditUnit] = useState<string>(HQ_UNIT);
   const [editDept, setEditDept] = useState("");
-  const [editBrigade, setEditBrigade] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [editRank, setEditRank] = useState<DepartmentRank>("member");
+  const [editManagerId, setEditManagerId] = useState<string>("");
   const [session, setSessionState] = useState<ReturnType<typeof getSession>>(null);
 
   // Auth guard: a logged-in manager sees the full screen (add + manage + remove).
@@ -52,26 +63,32 @@ function TeamManagementInner() {
   const isFullManager = Boolean(viewer?.isManager);
   const isSuperAdmin = Boolean(viewer?.isSuperAdmin);
   const myDept = viewer?.department ?? DEFAULT_DEPARTMENT;
+  const myUnit = viewer?.brigade ?? HQ_UNIT;
 
   // A super admin (נועם) sees and manages literally everyone, across every
-  // department, HR included — a regular manager (like Amit) only ever sees her
-  // own isolated unit's roster. Managers are included for the super admin's
-  // view since "manage all users" spans ranks too, not just soldiers.
-  const roster = isSuperAdmin ? team.filter((m) => m.id !== viewer?.id) : team.filter((m) => !m.isManager && (m.department ?? DEFAULT_DEPARTMENT) === myDept);
-  const knownDepartments = Array.from(new Set(team.map((m) => m.department ?? DEFAULT_DEPARTMENT)));
+  // department instance, HR included — a regular manager (like Amit) only ever
+  // sees her own isolated (unit, department) pair's roster. Managers are
+  // included for the super admin's view since "manage all users" spans ranks
+  // too, not just soldiers.
+  const roster = isSuperAdmin
+    ? team.filter((m) => m.id !== viewer?.id)
+    : team.filter((m) => !m.isManager && (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === myUnit);
 
-  // Group the super admin's cross-department roster by unit, so it reads as
-  // separate rosters rather than one undifferentiated list.
-  const groupedByDept: { department: string; members: TeamMember[] }[] = isSuperAdmin
+  // Group the super admin's cross-unit roster by (brigade, department) PAIR, not department
+  // alone — 'משא"ן' of מפא"ג and 'משא"ן' of חטיבה 14 are separate, isolated instances that
+  // happen to share a name, and must read as separate rosters, not one merged list.
+  const groupedByDept: { unit: string; department: string; members: TeamMember[] }[] = isSuperAdmin
     ? Array.from(
         roster.reduce((acc, m) => {
-          const key = m.department ?? DEFAULT_DEPARTMENT;
-          if (!acc.has(key)) acc.set(key, []);
-          acc.get(key)!.push(m);
+          const unit = m.brigade ?? HQ_UNIT;
+          const department = m.department ?? DEFAULT_DEPARTMENT;
+          const key = `${unit}::${department}`;
+          if (!acc.has(key)) acc.set(key, { unit, department, members: [] as TeamMember[] });
+          acc.get(key)!.members.push(m);
           return acc;
-        }, new Map<string, TeamMember[]>())
-      ).map(([department, members]) => ({ department, members }))
-    : [{ department: myDept, members: roster }];
+        }, new Map<string, { unit: string; department: string; members: TeamMember[] }>())
+      ).map(([, group]) => group)
+    : [{ unit: myUnit, department: myDept, members: roster }];
 
   const handleAdd = () => {
     setError("");
@@ -102,14 +119,20 @@ function TeamManagementInner() {
       setError("כבר יש איש/אשת צוות עם השם הזה — לכניסה עם שם צריך שם ייחודי");
       return;
     }
-    const department = isSuperAdmin ? newDept.trim() || DEFAULT_DEPARTMENT : myDept;
-    const brigade = isSuperAdmin ? newBrigade.trim() || null : viewer?.brigade ?? null;
+    const brigade = isSuperAdmin ? newUnit : myUnit;
+    const department = isSuperAdmin ? newDept : myDept;
     const title = isSuperAdmin ? newTitle.trim() || null : null;
     addMember(trimmedName, department, brigade, title);
     setName("");
-    setNewDept("");
-    setNewBrigade("");
+    setNewUnit(HQ_UNIT);
+    setNewDept(getDepartmentsForUnit(HQ_UNIT)[0] ?? DEFAULT_DEPARTMENT);
     setNewTitle("");
+  };
+
+  const handleNewUnitChange = (unit: string) => {
+    setNewUnit(unit);
+    const depts = getDepartmentsForUnit(unit);
+    if (!depts.includes(newDept)) setNewDept(depts[0] ?? DEFAULT_DEPARTMENT);
   };
 
   const handleRemove = (id: string) => {
@@ -119,16 +142,47 @@ function TeamManagementInner() {
 
   const startEditDept = (member: TeamMember) => {
     setEditingDeptId(member.id);
+    setEditUnit(member.brigade ?? HQ_UNIT);
     setEditDept(member.department ?? DEFAULT_DEPARTMENT);
-    setEditBrigade(member.brigade ?? "");
     setEditTitle(member.title ?? "");
+    setEditRank(rankFromFlags(member.isManager, member.isSuperManager));
+    setEditManagerId(member.managerId ?? "");
+  };
+
+  const handleEditUnitChange = (unit: string) => {
+    setEditUnit(unit);
+    const depts = getDepartmentsForUnit(unit);
+    if (!depts.includes(editDept)) setEditDept(depts[0] ?? DEFAULT_DEPARTMENT);
   };
 
   const saveEditDept = (id: string) => {
-    const department = editDept.trim() || DEFAULT_DEPARTMENT;
-    updateMember(id, { department, brigade: editBrigade.trim() || null, title: editTitle.trim() || null });
+    const department = editDept || DEFAULT_DEPARTMENT;
+    const brigade = editUnit || HQ_UNIT;
+    const { isManager, isSuperManager } = flagsFromRank(editRank);
+    updateMember(id, {
+      department,
+      brigade,
+      title: editTitle.trim() || null,
+      isManager,
+      isSuperManager,
+      managerId: editManagerId || null,
+    });
     setEditingDeptId(null);
   };
+
+  // Eligible managers for the person currently being edited: someone else in the SAME
+  // (unit, department) instance being assigned to, ranked strictly above the rank about to be
+  // saved. Recomputed live off editUnit/editDept/editRank so the manager list always matches
+  // whatever unit/department/rank combination is currently selected in the form.
+  const eligibleManagersForEdit = editingDeptId
+    ? team.filter(
+        (m) =>
+          m.id !== editingDeptId &&
+          m.brigade === editUnit &&
+          (m.department ?? DEFAULT_DEPARTMENT) === editDept &&
+          memberRank(m) > memberRank(flagsFromRank(editRank))
+      )
+    : [];
 
   const taskCountFor = (id: string) => tasks.filter((t) => t.assigneeIds.includes(id)).length;
 
@@ -170,24 +224,28 @@ function TeamManagementInner() {
           />
           {isSuperAdmin && (
             <>
-              <input
+              <select
+                value={newUnit}
+                onChange={(e) => handleNewUnitChange(e.target.value)}
+                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
+              >
+                {ORG_UNITS.map((u) => (
+                  <option key={u.key} value={u.key}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+              <select
                 value={newDept}
                 onChange={(e) => setNewDept(e.target.value)}
-                list="dept-options"
-                placeholder={`יחידה (ברירת מחדל: ${DEFAULT_DEPARTMENT})`}
-                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
-              />
-              <datalist id="dept-options">
-                {knownDepartments.map((d) => (
-                  <option key={d} value={d} />
+                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
+              >
+                {getDepartmentsForUnit(newUnit).map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
                 ))}
-              </datalist>
-              <input
-                value={newBrigade}
-                onChange={(e) => setNewBrigade(e.target.value)}
-                placeholder="חטיבה / תת-יחידה (לא חובה)"
-                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
-              />
+              </select>
               <input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
@@ -210,15 +268,11 @@ function TeamManagementInner() {
           via canAddMembers gets a plain name list, nothing about anyone's tasks.
           A super admin sees every department, grouped, with a manage-department
           control on each person — everyone else stays walled inside their own unit. */}
-      {groupedByDept.map(({ department, members }) => (
-        <section key={department} className="mb-6">
+      {groupedByDept.map(({ unit, department, members }) => (
+        <section key={`${unit}::${department}`} className="mb-6">
           <p className="mb-3 flex items-center gap-1.5 px-1 text-sm font-bold text-ink dark:text-ink-dark">
             {isSuperAdmin && <Building2 size={14} className="text-ink-soft dark:text-ink-dark-soft" />}
-            {department === DEFAULT_DEPARTMENT && !isSuperAdmin
-              ? "אנשי המשרד"
-              : department === DEFAULT_DEPARTMENT
-              ? DEFAULT_DEPARTMENT
-              : `${department}${!isSuperAdmin && viewer?.brigade ? " · " + viewer.brigade : ""}`}{" "}
+            {isSuperAdmin ? `${department} · ${unit}` : department === DEFAULT_DEPARTMENT ? "אנשי המשרד" : department}{" "}
             ({members.length})
           </p>
           <div className="space-y-2.5">
@@ -267,25 +321,78 @@ function TeamManagementInner() {
 
                 {isSuperAdmin && editingDeptId === member.id && (
                   <div className="mt-3 space-y-2 rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50/60 dark:bg-brand-500/10 p-3.5">
-                    <input
+                    <select
+                      value={editUnit}
+                      onChange={(e) => handleEditUnitChange(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
+                    >
+                      {ORG_UNITS.map((u) => (
+                        <option key={u.key} value={u.key}>
+                          {u.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
                       value={editDept}
                       onChange={(e) => setEditDept(e.target.value)}
-                      list="dept-options"
-                      placeholder="יחידה"
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
-                    />
-                    <input
-                      value={editBrigade}
-                      onChange={(e) => setEditBrigade(e.target.value)}
-                      placeholder="חטיבה / תת-יחידה (לא חובה)"
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
-                    />
+                    >
+                      {getDepartmentsForUnit(editUnit).map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                       placeholder="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
                     />
+                    <div className="border-t border-brand-200/60 dark:border-brand-500/20 pt-2">
+                      <p className="mb-1.5 text-xs font-bold text-ink-soft dark:text-ink-dark-soft">
+                        היררכיה בתוך המדור (סופר-אדמין בלבד)
+                      </p>
+                      <select
+                        value={editRank}
+                        onChange={(e) => {
+                          const rank = e.target.value as DepartmentRank;
+                          setEditRank(rank);
+                          // A manager assigned under the OLD rank may no longer outrank the
+                          // NEW rank (e.g. demoting a commander to member while an officer was
+                          // picked as their manager is fine, but promoting to commander should
+                          // clear a now-invalid selection) — drop it rather than save something
+                          // that no longer makes sense.
+                          const stillValid = team.some(
+                            (m) =>
+                              m.id === editManagerId &&
+                              m.brigade === editUnit &&
+                              (m.department ?? DEFAULT_DEPARTMENT) === editDept &&
+                              memberRank(m) > memberRank(flagsFromRank(rank))
+                          );
+                          if (!stillValid) setEditManagerId("");
+                        }}
+                        className="mb-2 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
+                      >
+                        {(Object.keys(RANK_LABELS) as DepartmentRank[]).map((r) => (
+                          <option key={r} value={r}>
+                            {RANK_LABELS[r]}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={editManagerId}
+                        onChange={(e) => setEditManagerId(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
+                      >
+                        <option value="">ללא מפקד/ת ישיר/ה</option>
+                        {eligibleManagersForEdit.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => saveEditDept(member.id)}
