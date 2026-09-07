@@ -24,18 +24,3 @@ export function setTheme(pref: ThemePreference) {
   if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, pref);
   applyTheme(pref);
 }
-
-/**
- * Inline script source, meant to run in <head> before first paint, so the
- * page never flashes the wrong theme. Reads the exact same localStorage key
- * as getStoredTheme()/setTheme() above — keep both in sync if this changes.
- */
-export const THEME_INIT_SCRIPT = `
-(function () {
-  try {
-    var pref = localStorage.getItem("${STORAGE_KEY}");
-    var dark = pref === "dark" || (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    if (dark) document.documentElement.classList.add("dark");
-  } catch (e) {}
-})();
-`;
