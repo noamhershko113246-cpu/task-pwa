@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { ToastProvider } from "@/components/ToastProvider";
+import { WhatsNewProvider } from "@/components/WhatsNewProvider";
 import { TaskStoreProvider } from "@/lib/store";
 import { applyTheme, getStoredTheme } from "@/lib/theme";
 
@@ -23,7 +24,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
-      <TaskStoreProvider>{children}</TaskStoreProvider>
+      <TaskStoreProvider>
+        <WhatsNewProvider>{children}</WhatsNewProvider>
+      </TaskStoreProvider>
     </ToastProvider>
   );
 }

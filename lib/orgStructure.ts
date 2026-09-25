@@ -1,11 +1,15 @@
 /**
- * The real organizational chart this app's hierarchy is modeled on — fixed, hard-coded
- * constants rather than free text, so "which unit / which department" is always picked from a
- * closed list instead of typed by hand (the exact source of the "משאן" vs 'משא"ן' mismatch this
- * replaces). A "unit" here is either the division HQ (מפא"ג) or one of its 5 brigades; each unit
- * has its own fixed list of departments. Department names repeat across units on purpose — "משא"ן
- * of חטיבה 14" and "משא"ן of מפא"ג" are two entirely separate, isolated department instances that
- * happen to share a name, not the same department.
+ * The real organizational chart this app's hierarchy is modeled on. A "unit" here is either the
+ * division HQ (מפא"ג) or one of its brigades; each unit has its own list of departments.
+ * Department names repeat across units on purpose — "משא"ן of חטיבה 14" and "משא"ן of מפא"ג" are
+ * two entirely separate, isolated department instances that happen to share a name, not the same
+ * department.
+ *
+ * The live list of units/departments is stored in Supabase (org_units/org_departments tables,
+ * see lib/store.tsx's `orgUnits`) so a super-admin can add new ones from the org-chart tree
+ * instead of only picking from a closed list. SEED_ORG_UNITS below is the original hardcoded
+ * list this replaced — kept only as the one-time migration seed and as an emergency fallback
+ * before the store has loaded (e.g. very first paint), never as the live source of truth.
  */
 
 export const HQ_UNIT = 'מפא"ג';
@@ -18,7 +22,7 @@ export interface OrgUnit {
   departments: readonly string[];
 }
 
-export const ORG_UNITS: OrgUnit[] = [
+export const SEED_ORG_UNITS: OrgUnit[] = [
   { key: HQ_UNIT, label: 'מפא"ג — מפקדת האוגדה', departments: [...COMMON_DEPARTMENTS, "רפואה"] },
   { key: "חטיבה 10", label: "חטיבה 10 — הראל", departments: COMMON_DEPARTMENTS },
   { key: "חטיבה 12", label: "חטיבה 12 — הנגב", departments: COMMON_DEPARTMENTS },
@@ -27,16 +31,18 @@ export const ORG_UNITS: OrgUnit[] = [
   { key: "חטיבה 454", label: "חטיבה 454 — עוצבת התבור", departments: COMMON_DEPARTMENTS },
 ];
 
-export function getUnit(unitKey: string): OrgUnit | undefined {
-  return ORG_UNITS.find((u) => u.key === unitKey);
+export function getUnit(units: readonly OrgUnit[], unitKey: string): OrgUnit | undefined {
+  return units.find((u) => u.key === unitKey);
 }
 
-export function getDepartmentsForUnit(unitKey: string): readonly string[] {
-  return getUnit(unitKey)?.departments ?? [];
+export function getDepartmentsForUnit(units: readonly OrgUnit[], unitKey: string): readonly string[] {
+  return getUnit(units, unitKey)?.departments ?? [];
 }
 
 /** Every department name that exists anywhere, deduped — e.g. for a fallback/legacy display. */
-export const ALL_DEPARTMENT_NAMES = Array.from(new Set(ORG_UNITS.flatMap((u) => u.departments)));
+export function allDepartmentNames(units: readonly OrgUnit[]): string[] {
+  return Array.from(new Set(units.flatMap((u) => u.departments)));
+}
 
 /**
  * Rank *within one department instance* — a closed 3-tier ladder, not an open-ended chain.

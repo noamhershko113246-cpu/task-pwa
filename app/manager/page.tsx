@@ -3,11 +3,12 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Users, LayoutGrid, CalendarDays, Wand2, Settings } from "lucide-react";
+import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Megaphone, Users, LayoutGrid, CalendarDays, Wand2, Settings, Network } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
+import { useWhatsNew } from "@/components/WhatsNewProvider";
 import ProgressRing from "@/components/ProgressRing";
 import StatusBadge from "@/components/StatusBadge";
 import PriorityBadge from "@/components/PriorityBadge";
@@ -32,6 +33,7 @@ import clsx from "clsx";
 function ManagerDashboardInner() {
   const router = useRouter();
   const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
+  const { openWhatsNew } = useWhatsNew();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   // Looked up live from `tasks` (not snapshotted at click-time) so the open sheet
@@ -139,6 +141,14 @@ function ManagerDashboardInner() {
         <div className="flex items-center justify-end gap-2">
           <NotificationBell userId={me.id} />
           <button
+            onClick={openWhatsNew}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+            aria-label="מה חדש"
+            title="מה חדש"
+          >
+            <Megaphone size={16} className="text-ink-soft" />
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
             aria-label="הגדרות"
@@ -162,6 +172,16 @@ function ManagerDashboardInner() {
           >
             <Users size={16} className="text-ink-soft" />
           </Link>
+          {me.isSuperAdmin && (
+            <Link
+              href="/manager/org-chart"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+              aria-label="עץ מבנה ארגוני"
+              title="עץ מבנה ארגוני"
+            >
+              <Network size={16} className="text-ink-soft" />
+            </Link>
+          )}
           <button
             onClick={handleLogout}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"

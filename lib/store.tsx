@@ -5,7 +5,7 @@ import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Prior
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
 import { removeTaskAttachmentFile } from "./attachments";
-import { HQ_UNIT } from "./orgStructure";
+import { HQ_UNIT, OrgUnit, SEED_ORG_UNITS } from "./orgStructure";
 
 // Exported so the Settings UI can offer the exact same palette as a picker, instead of only
 // ever being assigned round-robin at creation time.
@@ -106,6 +106,21 @@ interface ActivityRow {
   created_at: string;
 }
 
+interface OrgUnitRow {
+  key: string;
+  label: string;
+  created_at: string;
+  is_seed: boolean;
+}
+
+interface OrgDepartmentRow {
+  id: string;
+  unit_key: string;
+  name: string;
+  created_at: string;
+  is_seed: boolean;
+}
+
 function memberFromRow(r: TeamRow): TeamMember {
   return {
     id: r.id,
@@ -180,6 +195,7 @@ interface TaskStoreValue {
   tasks: Task[];
   activity: ActivityEvent[];
   team: TeamMember[];
+  orgUnits: OrgUnit[];
   createTasks: (newTasks: Omit<Task, "id" | "createdAt" | "status">[]) => void;
   // actorId: who's actually performing this edit — required to log/notify correctly when a
   // reassignment amounts to one person transferring the task to another (see updateTask below).
@@ -222,6 +238,10 @@ interface TaskStoreValue {
     }
   ) => void;
   removeMember: (id: string) => void;
+  // Super-admin-only in the UI (enforced by the org-chart page's route guard, not here):
+  // lets new units/departments be created instead of only picking from the seeded list.
+  addOrgUnit: (key: string, label: string) => void;
+  addOrgDepartment: (unitKey: string, name: string) => void;
 }
 
 const TaskStoreContext = createContext<TaskStoreValue | null>(null);
@@ -234,6 +254,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [commentsByTask, setCommentsByTask] = useState<Record<string, Comment[]>>({});
   const [attachmentsByTask, setAttachmentsByTask] = useState<Record<string, Attachment[]>>({});
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [orgUnitRows, setOrgUnitRows] = useState<OrgUnitRow[]>([]);
+  const [orgDeptRows, setOrgDeptRows] = useState<OrgDepartmentRow[]>([]);
   const teamRef = useRef<TeamMember[]>([]);
   teamRef.current = team;
   const rawTasksRef = useRef<Omit<Task, "comments">[]>([]);
@@ -259,12 +281,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes] = await Promise.all([
+      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes, orgUnitsRes, orgDeptsRes] = await Promise.all([
         supabase.from("team_members").select("*").order("created_at"),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("task_comments").select("*").order("created_at"),
         supabase.from("task_attachments").select("*").order("created_at"),
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("org_units").select("*").order("created_at"),
+        supabase.from("org_departments").select("*").order("created_at"),
       ]);
       if (cancelled) return;
       if (teamRes.error || tasksRes.error) {
@@ -289,6 +313,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         setAttachmentsByTask(grouped);
       }
       if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
+      if (orgUnitsRes.data) setOrgUnitRows(orgUnitsRes.data as OrgUnitRow[]);
+      if (orgDeptsRes.data) setOrgDeptRows(orgDeptsRes.data as OrgDepartmentRow[]);
       setLoading(false);
     }
     load();
@@ -363,6 +389,29 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, (payload) => {
         const a = activityFromRow(payload.new as ActivityRow);
         setActivity((prev) => [a, ...prev]);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "org_units" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          setOrgUnitRows((prev) => prev.filter((u) => u.key !== (payload.old as OrgUnitRow).key));
+        } else {
+          const u = payload.new as OrgUnitRow;
+          setOrgUnitRows((prev) => {
+            const exists = prev.some((x) => x.key === u.key);
+            return exists ? prev.map((x) => (x.key === u.key ? u : x)) : [...prev, u];
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "org_departments" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const deletedId = (payload.old as OrgDepartmentRow).id;
+          setOrgDeptRows((prev) => prev.filter((d) => d.id !== deletedId));
+        } else {
+          const d = payload.new as OrgDepartmentRow;
+          setOrgDeptRows((prev) => {
+            const exists = prev.some((x) => x.id === d.id);
+            return exists ? prev.map((x) => (x.id === d.id ? d : x)) : [...prev, d];
+          });
+        }
       })
       .subscribe();
 
@@ -663,6 +712,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (patch.managerId !== undefined) dbPatch.manager_id = patch.managerId;
       const { error } = await supabase.from("team_members").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון הפרטים")) return;
+      // Applied locally right away rather than relying solely on the realtime echo to bring it
+      // back — that echo can lag or (seen in practice) sometimes never arrive for this table,
+      // which made a change like "mark as commander" silently invisible until a manual reload.
+      // `patch`'s keys already match TeamMember's own field names, so this is a safe direct merge.
+      setTeam((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
       // Silent settings toggles (like the reminder popover) don't need their own
       // toast — only show one when an actual name/phone edit happened.
       if (patch.name !== undefined || patch.phone !== undefined) showToast("הפרטים עודכנו בהצלחה");
@@ -698,20 +752,68 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [findMember, reportIfError, showToast]);
 
+  const addOrgUnit: TaskStoreValue["addOrgUnit"] = useCallback((key, label) => {
+    (async () => {
+      const trimmedKey = key.trim();
+      const trimmedLabel = label.trim();
+      const { error } = await supabase.from("org_units").insert({ key: trimmedKey, label: trimmedLabel });
+      if (reportIfError(error, "יצירת היחידה")) return;
+      // Applied locally right away — see the same note on updateMember above; the org_units
+      // primary key IS the trimmed key itself, so no round-trip is needed to know it.
+      setOrgUnitRows((prev) =>
+        prev.some((u) => u.key === trimmedKey)
+          ? prev
+          : [...prev, { key: trimmedKey, label: trimmedLabel, created_at: new Date().toISOString(), is_seed: false }]
+      );
+      showToast(`היחידה "${trimmedLabel}" נוצרה בהצלחה`);
+    })();
+  }, [reportIfError, showToast]);
+
+  const addOrgDepartment: TaskStoreValue["addOrgDepartment"] = useCallback((unitKey, name) => {
+    (async () => {
+      const trimmedName = name.trim();
+      const { data, error } = await supabase
+        .from("org_departments")
+        .insert({ unit_key: unitKey, name: trimmedName })
+        .select()
+        .single();
+      if (reportIfError(error, "יצירת המדור")) return;
+      // Applied locally right away — see the same note on updateMember above. Unlike org_units,
+      // org_departments' id is DB-generated, so the inserted row is read back via .select().
+      if (data) {
+        const row = data as OrgDepartmentRow;
+        setOrgDeptRows((prev) => (prev.some((d) => d.id === row.id) ? prev : [...prev, row]));
+      }
+      showToast(`המדור "${trimmedName}" נוצר בהצלחה`);
+    })();
+  }, [reportIfError, showToast]);
+
   const tasks = useMemo<Task[]>(
     () => rawTasks.map((t) => ({ ...t, comments: commentsByTask[t.id] ?? [], attachments: attachmentsByTask[t.id] ?? [] })),
     [rawTasks, commentsByTask, attachmentsByTask]
   );
 
+  // Joins the two flat DB-shaped row lists into the app's OrgUnit[] shape. Falls back to the
+  // original hardcoded seed list only if the DB hasn't returned anything yet (e.g. very first
+  // paint) — once loaded, this is always the live, super-admin-editable list.
+  const orgUnits = useMemo<OrgUnit[]>(() => {
+    if (orgUnitRows.length === 0) return SEED_ORG_UNITS;
+    return orgUnitRows.map((u) => ({
+      key: u.key,
+      label: u.label,
+      departments: orgDeptRows.filter((d) => d.unit_key === u.key).map((d) => d.name),
+    }));
+  }, [orgUnitRows, orgDeptRows]);
+
   // Every action function above is now stable (useCallback + refs for live data),
   // so this only needs to change when the actual DATA changes — not on every render.
   const value = useMemo(
     () => ({
-      loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment,
-      addAttachment, removeAttachment, addMember, updateMember, removeMember,
+      loading, tasks, activity, team, orgUnits, createTasks, updateTask, deleteTask, addComment,
+      addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment,
     }),
-    [loading, tasks, activity, team, createTasks, updateTask, deleteTask, addComment,
-      addAttachment, removeAttachment, addMember, updateMember, removeMember]
+    [loading, tasks, activity, team, orgUnits, createTasks, updateTask, deleteTask, addComment,
+      addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment]
   );
 
   return <TaskStoreContext.Provider value={value}>{children}</TaskStoreContext.Provider>;

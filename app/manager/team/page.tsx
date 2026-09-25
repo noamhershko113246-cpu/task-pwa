@@ -12,7 +12,6 @@ import {
   flagsFromRank,
   getDepartmentsForUnit,
   HQ_UNIT,
-  ORG_UNITS,
   RANK_LABELS,
   rankFromFlags,
 } from "@/lib/orgStructure";
@@ -24,10 +23,10 @@ import BottomNav from "@/components/BottomNav";
 
 function TeamManagementInner() {
   const router = useRouter();
-  const { team, tasks, loading, addMember, updateMember, removeMember } = useTaskStore();
+  const { team, tasks, loading, orgUnits, addMember, updateMember, removeMember } = useTaskStore();
   const [name, setName] = useState("");
   const [newUnit, setNewUnit] = useState<string>(HQ_UNIT);
-  const [newDept, setNewDept] = useState<string>(getDepartmentsForUnit(HQ_UNIT)[0] ?? DEFAULT_DEPARTMENT);
+  const [newDept, setNewDept] = useState<string>(DEFAULT_DEPARTMENT);
   const [newTitle, setNewTitle] = useState("");
   const [error, setError] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
@@ -125,13 +124,13 @@ function TeamManagementInner() {
     addMember(trimmedName, department, brigade, title);
     setName("");
     setNewUnit(HQ_UNIT);
-    setNewDept(getDepartmentsForUnit(HQ_UNIT)[0] ?? DEFAULT_DEPARTMENT);
+    setNewDept(getDepartmentsForUnit(orgUnits, HQ_UNIT)[0] ?? DEFAULT_DEPARTMENT);
     setNewTitle("");
   };
 
   const handleNewUnitChange = (unit: string) => {
     setNewUnit(unit);
-    const depts = getDepartmentsForUnit(unit);
+    const depts = getDepartmentsForUnit(orgUnits, unit);
     if (!depts.includes(newDept)) setNewDept(depts[0] ?? DEFAULT_DEPARTMENT);
   };
 
@@ -151,7 +150,7 @@ function TeamManagementInner() {
 
   const handleEditUnitChange = (unit: string) => {
     setEditUnit(unit);
-    const depts = getDepartmentsForUnit(unit);
+    const depts = getDepartmentsForUnit(orgUnits, unit);
     if (!depts.includes(editDept)) setEditDept(depts[0] ?? DEFAULT_DEPARTMENT);
   };
 
@@ -229,7 +228,7 @@ function TeamManagementInner() {
                 onChange={(e) => handleNewUnitChange(e.target.value)}
                 className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
               >
-                {ORG_UNITS.map((u) => (
+                {orgUnits.map((u) => (
                   <option key={u.key} value={u.key}>
                     {u.label}
                   </option>
@@ -240,7 +239,7 @@ function TeamManagementInner() {
                 onChange={(e) => setNewDept(e.target.value)}
                 className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
               >
-                {getDepartmentsForUnit(newUnit).map((d) => (
+                {getDepartmentsForUnit(orgUnits, newUnit).map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
@@ -330,7 +329,7 @@ function TeamManagementInner() {
                       onChange={(e) => handleEditUnitChange(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
                     >
-                      {ORG_UNITS.map((u) => (
+                      {orgUnits.map((u) => (
                         <option key={u.key} value={u.key}>
                           {u.label}
                         </option>
@@ -341,7 +340,7 @@ function TeamManagementInner() {
                       onChange={(e) => setEditDept(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
                     >
-                      {getDepartmentsForUnit(editUnit).map((d) => (
+                      {getDepartmentsForUnit(orgUnits, editUnit).map((d) => (
                         <option key={d} value={d}>
                           {d}
                         </option>

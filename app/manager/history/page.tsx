@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ShieldCheck } from "lucide-react";
+import { ChevronRight, Plus, ShieldCheck } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -12,15 +12,17 @@ import MonthHistory from "@/components/MonthHistory";
 import SearchBar from "@/components/SearchBar";
 import PriorityFilter from "@/components/PriorityFilter";
 import TaskDetailSheet from "@/components/TaskDetailSheet";
+import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import clsx from "clsx";
 
 function ManagerHistoryInner() {
-  const { tasks, team, loading, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
+  const { tasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const [groupBy, setGroupBy] = useState<"member" | "day">("member");
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const detailTask = detailTaskId ? tasks.find((t) => t.id === detailTaskId) ?? null : null;
   const session = getSession();
   const me = team.find((m) => m.id === session?.userId);
@@ -100,6 +102,21 @@ function ManagerHistoryInner() {
         onAddComment={addComment}
         onAddAttachment={addAttachment}
         onRemoveAttachment={removeAttachment}
+      />
+
+      <button
+        onClick={() => setCreateOpen(true)}
+        className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+      >
+        <Plus size={20} strokeWidth={2.5} />
+        משימה חדשה
+      </button>
+
+      <CreateTaskSheet
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        team={assignableTeam}
+        onCreate={(newTasks) => createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })))}
       />
 
       <BottomNav base="manager" />

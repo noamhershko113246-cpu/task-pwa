@@ -3,10 +3,11 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Lock, Eye, LogOut, Plus, Wand2, Settings, UserPlus, UserCog } from "lucide-react";
+import { ChevronRight, Lock, Eye, LogOut, Megaphone, Plus, Wand2, Settings, UserPlus, UserCog } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
+import { useWhatsNew } from "@/components/WhatsNewProvider";
 import TaskCard from "@/components/TaskCard";
 import EmptyState from "@/components/EmptyState";
 import AppHeader from "@/components/AppHeader";
@@ -33,6 +34,7 @@ function StaffDashboardInner() {
 
   const { tasks: allTasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const member = team.find((m) => m.id === userId) ?? team[1] ?? team[0];
+  const { openWhatsNew } = useWhatsNew();
 
   const [session, setSessionState] = useState<ReturnType<typeof getSession>>(null);
 
@@ -147,6 +149,14 @@ function StaffDashboardInner() {
         ) : (
           <div className="flex shrink-0 items-center gap-2">
             <NotificationBell userId={member.id} />
+            <button
+              onClick={openWhatsNew}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+              aria-label="מה חדש"
+              title="מה חדש"
+            >
+              <Megaphone size={16} className="text-ink-soft" />
+            </button>
             <button
               onClick={() => setSettingsOpen(true)}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
