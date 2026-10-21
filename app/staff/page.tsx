@@ -16,6 +16,7 @@ import RoleBadge from "@/components/RoleBadge";
 import UndoToast from "@/components/UndoToast";
 import SearchBar from "@/components/SearchBar";
 import PriorityFilter from "@/components/PriorityFilter";
+import { CategoryFilter, matchesCategoryFilter, useCategoryFilter } from "@/components/CategoryChips";
 import TaskDetailSheet from "@/components/TaskDetailSheet";
 import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -32,7 +33,7 @@ function StaffDashboardInner() {
   const searchParams = useSearchParams();
   const userId = searchParams.get("user") ?? "noam";
 
-  const { tasks: allTasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
+  const { tasks: allTasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment, categories, getTaskCategory } = useTaskStore();
   const member = team.find((m) => m.id === userId) ?? team[1] ?? team[0];
   const { openWhatsNew } = useWhatsNew();
 
@@ -74,6 +75,10 @@ function StaffDashboardInner() {
 
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
+  // Categories are personal to whoever is logged in — a manager viewing this page sees her own categories, not the soldier's.
+  const viewerId = session?.userId ?? userId;
+  const myCategories = useMemo(() => categories.filter((c) => c.userId === viewerId), [categories, viewerId]);
+  const [categoryFilter, setCategoryFilter] = useCategoryFilter(myCategories);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   // Looked up live from `tasks` (not snapshotted at click-time) so the open sheet
   // reflects remote changes — e.g. a new comment from a manager — while it's open.
@@ -93,8 +98,11 @@ function StaffDashboardInner() {
     if (priorityFilter.size > 0) {
       base = base.filter((t) => priorityFilter.has(t.priority));
     }
+    if (categoryFilter.size > 0) {
+      base = base.filter((t) => matchesCategoryFilter(categoryFilter, getTaskCategory(t.id, viewerId)?.id));
+    }
     return base;
-  }, [tasks, query, priorityFilter]);
+  }, [tasks, query, priorityFilter, categoryFilter, getTaskCategory, viewerId]);
 
   if (loading || !member) return <LoadingScreen />;
 
@@ -107,13 +115,13 @@ function StaffDashboardInner() {
   // so this button is the only place she can create a task for her target at all.
   const canCreateOwnTask = viewingAsManager || !member.isManager;
 
-  const isFiltering = Boolean(query.trim()) || priorityFilter.size > 0;
+  const isFiltering = Boolean(query.trim()) || priorityFilter.size > 0 || categoryFilter.size > 0;
 
   const handleComplete = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
-    updateTask(taskId, { previousStatus: task.status, status: "done" });
+    updateTask(taskId, { previousStatus: task.status, status: "done" }, viewerId);
     setUndoTask({ id: taskId, title: task.title });
 
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -123,7 +131,7 @@ function StaffDashboardInner() {
   const handleUndo = () => {
     if (!undoTask) return;
     const task = tasks.find((t) => t.id === undoTask.id);
-    updateTask(undoTask.id, { status: task?.previousStatus ?? "todo" });
+    updateTask(undoTask.id, { status: task?.previousStatus ?? "todo" }, viewerId);
     setUndoTask(null);
     if (undoTimer.current) clearTimeout(undoTimer.current);
   };
@@ -264,6 +272,11 @@ function StaffDashboardInner() {
       <div className="mb-4">
         <PriorityFilter selected={priorityFilter} onChange={setPriorityFilter} />
       </div>
+      {myCategories.length > 0 && (
+        <div className="-mt-2 mb-4">
+          <CategoryFilter categories={myCategories} selected={categoryFilter} onChange={setCategoryFilter} />
+        </div>
+      )}
 
       {!isFiltering && <ProductivityWrapped tasks={tasks} />}
 
@@ -287,6 +300,7 @@ function StaffDashboardInner() {
               <TaskCard
                 task={task}
                 creatorName={task.createdBy ? team.find((m) => m.id === task.createdBy)?.name : undefined}
+                category={getTaskCategory(task.id, viewerId)}
                 onComplete={handleComplete}
                 onOpenDetail={(t) => setDetailTaskId(t.id)}
               />
@@ -318,8 +332,12 @@ function StaffDashboardInner() {
         team={[member]}
         // Attribute to whoever is actually creating it (session owner), not the page's owner —
         // those differ now that a manager or proxy can create a task from someone else's page.
-        onCreate={(newTasks) =>
-          createTasks(newTasks.map((t) => ({ ...t, createdBy: session?.userId ?? member.id })))
+        currentUserId={viewerId}
+        onCreate={(newTasks, categoryId, steps) =>
+          createTasks(newTasks.map((t) => ({ ...t, createdBy: session?.userId ?? member.id })), {
+            category: categoryId ? { userId: viewerId, categoryId } : undefined,
+            steps,
+          })
         }
       />
 

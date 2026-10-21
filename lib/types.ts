@@ -18,6 +18,30 @@ export const PRIORITY_COLORS: Record<Priority, { bg: string; fg: string; label: 
   5: { bg: "#dcfce7", fg: "#15803d", label: "אפשר להמתין" },
 };
 
+/** Palette a user picks from for their own categories — stored by key in user_categories.color. */
+export const CATEGORY_COLORS: Record<string, { bg: string; fg: string }> = {
+  blue: { bg: "#dbeafe", fg: "#1d4ed8" },
+  purple: { bg: "#ede9fe", fg: "#6d28d9" },
+  pink: { bg: "#fce7f3", fg: "#be185d" },
+  red: { bg: "#fee2e2", fg: "#b91c1c" },
+  orange: { bg: "#ffedd5", fg: "#c2410c" },
+  yellow: { bg: "#fef9c3", fg: "#a16207" },
+  green: { bg: "#dcfce7", fg: "#15803d" },
+  teal: { bg: "#ccfbf1", fg: "#0f766e" },
+};
+
+export const MAX_CATEGORIES = 15;
+export const MAX_CATEGORY_NAME_LENGTH = 20;
+
+/** A personal task category. Owned by one user — a shared task can sit in a different category for each person. */
+export interface Category {
+  id: string;
+  userId: string;
+  name: string;
+  color: string; // key into CATEGORY_COLORS
+  sortOrder: number;
+}
+
 /** Every existing member predates the department field, so this is what "unset" means: the original HR team. */
 export const DEFAULT_DEPARTMENT = 'משא"ן';
 
@@ -121,6 +145,30 @@ export interface Attachment {
   timestamp: string; // ISO
 }
 
+export const MAX_STEPS = 30;
+export const MAX_STEP_LENGTH = 100;
+
+/** One ordered step of a task. Steps are shared by every assignee and must be completed in order. */
+export interface TaskStep {
+  id: string;
+  taskId: string;
+  title: string;
+  isDone: boolean;
+  doneBy?: string;
+  doneAt?: string; // ISO
+  sortOrder: number;
+}
+
+/** A step as edited in the task sheet before "save": `id` is unset for steps not saved yet. */
+export interface StepDraft {
+  key: string; // stable React key — the id, or a temp key for unsaved steps
+  id?: string;
+  title: string;
+  isDone: boolean;
+  doneBy?: string;
+  doneAt?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -136,6 +184,7 @@ export interface Task {
   completedAt?: string; // ISO timestamp — set when status becomes "done", cleared otherwise
   comments?: Comment[];
   attachments?: Attachment[];
+  steps?: TaskStep[]; // sorted by sortOrder
 }
 
 export interface ActivityEvent {

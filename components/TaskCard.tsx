@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
 import { Check, Calendar, AlertCircle, Paperclip } from "lucide-react";
-import { Task } from "@/lib/types";
-import { formatDeadline, isOverdue } from "@/lib/utils";
+import { Task, Category } from "@/lib/types";
+import { formatDeadline, formatCreatedAt, isOverdue } from "@/lib/utils";
 import { useConfetti } from "@/hooks/useConfetti";
 import PriorityBadge from "./PriorityBadge";
+import { CategoryBadge } from "./CategoryChips";
+import StepProgress from "./StepProgress";
 import clsx from "clsx";
 
 const SWIPE_THRESHOLD = 110;
@@ -14,11 +16,14 @@ const SWIPE_THRESHOLD = 110;
 export default function TaskCard({
   task,
   creatorName,
+  category,
   onComplete,
   onOpenDetail,
 }: {
   task: Task;
   creatorName?: string;
+  category?: Category; // the viewer's own category for this task
+
   onComplete: (taskId: string) => void;
   onOpenDetail?: (task: Task) => void;
 }) {
@@ -102,6 +107,7 @@ export default function TaskCard({
           {creatorName && (
             <p className="mt-1 text-[11px] text-ink-soft dark:text-ink-dark-soft">מאת: {creatorName}</p>
           )}
+          <StepProgress steps={task.steps} />
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
             {task.deadline && (
               <span
@@ -115,12 +121,20 @@ export default function TaskCard({
               </span>
             )}
             <PriorityBadge priority={task.priority} />
+            {category && <CategoryBadge category={category} />}
             {(task.attachments?.length ?? 0) > 0 && (
               <span className="inline-flex items-center gap-1 font-medium text-ink-soft dark:text-ink-dark-soft">
                 <Paperclip size={13} />
                 {task.attachments!.length}
               </span>
             )}
+            {/* ms-auto pushes this to the far (left, in RTL) end of the row — the card's bottom corner */}
+            <span
+              className="ms-auto text-[10px] text-ink-soft/70 dark:text-ink-dark-soft/70"
+              title="מועד פתיחת המשימה"
+            >
+              נפתחה {formatCreatedAt(task.createdAt)}
+            </span>
           </div>
         </div>
       </motion.div>

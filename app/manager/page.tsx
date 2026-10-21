@@ -21,6 +21,7 @@ import TaskDetailSheet from "@/components/TaskDetailSheet";
 import RoleBadge from "@/components/RoleBadge";
 import SearchBar from "@/components/SearchBar";
 import PriorityFilter from "@/components/PriorityFilter";
+import { CategoryFilter, matchesCategoryFilter, useCategoryFilter } from "@/components/CategoryChips";
 import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
@@ -32,7 +33,7 @@ import clsx from "clsx";
 
 function ManagerDashboardInner() {
   const router = useRouter();
-  const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
+  const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment, categories, getTaskCategory } = useTaskStore();
   const { openWhatsNew } = useWhatsNew();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -45,6 +46,8 @@ function ManagerDashboardInner() {
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const me = team.find((m) => m.id === sessionUserId);
+  const myCategories = useMemo(() => categories.filter((c) => c.userId === sessionUserId), [categories, sessionUserId]);
+  const [categoryFilter, setCategoryFilter] = useCategoryFilter(myCategories);
 
   // Auth guard: only a logged-in manager-tier person (manager, super-manager, or
   // a rank-independent super admin like Noam) may see this dashboard.
@@ -86,7 +89,7 @@ function ManagerDashboardInner() {
     [visibleTasks]
   );
 
-  const isFiltering = Boolean(query.trim()) || priorityFilter.size > 0;
+  const isFiltering = Boolean(query.trim()) || priorityFilter.size > 0 || categoryFilter.size > 0;
 
   const filteredResults = useMemo(() => {
     if (!isFiltering) return [];
@@ -98,8 +101,11 @@ function ManagerDashboardInner() {
     if (priorityFilter.size > 0) {
       results = results.filter((t) => priorityFilter.has(t.priority));
     }
+    if (categoryFilter.size > 0 && sessionUserId) {
+      results = results.filter((t) => matchesCategoryFilter(categoryFilter, getTaskCategory(t.id, sessionUserId)?.id));
+    }
     return [...results].sort(compareByDeadlineDesc);
-  }, [visibleTasks, query, priorityFilter, isFiltering]);
+  }, [visibleTasks, query, priorityFilter, categoryFilter, getTaskCategory, sessionUserId, isFiltering]);
 
   if (loading || !me) return <LoadingScreen />;
 
@@ -225,6 +231,11 @@ function ManagerDashboardInner() {
       </div>
       <div className="mb-5">
         <PriorityFilter selected={priorityFilter} onChange={setPriorityFilter} />
+        {myCategories.length > 0 && (
+          <div className="mt-2">
+            <CategoryFilter categories={myCategories} selected={categoryFilter} onChange={setCategoryFilter} />
+          </div>
+        )}
       </div>
 
       {!isFiltering && (
@@ -254,7 +265,13 @@ function ManagerDashboardInner() {
             filteredResults.map((task) => {
               const assignees = team.filter((m) => task.assigneeIds.includes(m.id));
               return (
-                <HistoryTaskRow key={task.id} task={task} assignees={assignees} onClick={(t) => setDetailTaskId(t.id)} />
+                <HistoryTaskRow
+                  key={task.id}
+                  task={task}
+                  assignees={assignees}
+                  category={getTaskCategory(task.id, me.id)}
+                  onClick={(t) => setDetailTaskId(t.id)}
+                />
               );
             })
           )}
@@ -392,7 +409,13 @@ function ManagerDashboardInner() {
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         team={assignableTeam}
-        onCreate={(newTasks) => createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })))}
+        currentUserId={me.id}
+        onCreate={(newTasks, categoryId, steps) =>
+          createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })), {
+            category: categoryId ? { userId: me.id, categoryId } : undefined,
+            steps,
+          })
+        }
       />
 
       <TaskDetailSheet

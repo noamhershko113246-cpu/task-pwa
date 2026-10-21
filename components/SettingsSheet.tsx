@@ -10,6 +10,7 @@ import { uploadBackground, removeBackground } from "@/lib/background";
 import { uploadAvatarPhoto, removeAvatarPhoto } from "@/lib/avatar";
 import { BACKGROUND_PRESETS } from "@/lib/backgroundPresets";
 import Avatar from "./Avatar";
+import CategoriesSettings from "./CategoriesSettings";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "לפי המערכת", icon: MonitorSmartphone },
@@ -283,6 +284,8 @@ export default function SettingsSheet({
                   })}
                 </div>
               </section>
+
+              <CategoriesSettings userId={member.id} />
 
               {/* Appearance */}
               <section>

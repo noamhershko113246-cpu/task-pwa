@@ -33,7 +33,9 @@ export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClos
                   <Megaphone size={18} />
                 </span>
                 <div>
-                  <h2 className="text-base font-extrabold text-ink dark:text-ink-dark">מה חדש</h2>
+                  <h2 className="text-base font-extrabold text-ink dark:text-ink-dark">
+                    מה חדש{LATEST_RELEASE.label ? ` · ${LATEST_RELEASE.label}` : ""}
+                  </h2>
                   <p className="text-xs text-ink-soft dark:text-ink-dark-soft">עודכן ב-{LATEST_RELEASE.date}</p>
                 </div>
               </div>

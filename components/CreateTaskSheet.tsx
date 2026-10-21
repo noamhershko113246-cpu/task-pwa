@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
-import { X, Repeat } from "lucide-react";
-import { TeamMember, Task, Priority, PRIORITY_COLORS } from "@/lib/types";
+import { X, Repeat, Plus, ChevronUp, ChevronDown } from "lucide-react";
+import { TeamMember, Task, Priority, PRIORITY_COLORS, MAX_STEPS, MAX_STEP_LENGTH } from "@/lib/types";
 import { generateRecurringDates, WEEKDAY_LETTERS, firstName } from "@/lib/utils";
+import { useTaskStore } from "@/lib/store";
+import { CategoryPicker } from "./CategoryChips";
 import clsx from "clsx";
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
@@ -15,11 +17,16 @@ export default function CreateTaskSheet({
   team,
   onCreate,
   initialDate,
+  currentUserId,
 }: {
   open: boolean;
   onClose: () => void;
   team: TeamMember[];
-  onCreate: (tasks: Omit<Task, "id" | "createdAt" | "status">[]) => void;
+  /** categoryId: the creator's own category pick (personal — applies to them only), null = none.
+   *  steps: ordered step titles, copied onto every created task (empty = no steps). */
+  onCreate: (tasks: Omit<Task, "id" | "createdAt" | "status">[], categoryId: string | null, steps: string[]) => void;
+  /** Whoever is logged in — whose personal categories are offered. Omit to hide the picker. */
+  currentUserId?: string;
   /** "YYYY-MM-DD" — when opened from a specific calendar day, pre-fills the deadline to that
    *  day (09:00) instead of leaving it empty. The date/time stays fully editable either way. */
   initialDate?: string;
@@ -32,6 +39,28 @@ export default function CreateTaskSheet({
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
   const [recurrenceEnd, setRecurrenceEnd] = useState("");
   const [priority, setPriority] = useState<Priority>(3);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [steps, setSteps] = useState<string[]>([]);
+  const [newStep, setNewStep] = useState("");
+
+  const addStep = () => {
+    const title = newStep.trim();
+    if (!title || steps.length >= MAX_STEPS) return;
+    setSteps((prev) => [...prev, title]);
+    setNewStep("");
+  };
+
+  const moveStep = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= steps.length) return;
+    setSteps((prev) => {
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+  const { categories } = useTaskStore();
+  const myCategories = currentUserId ? categories.filter((c) => c.userId === currentUserId) : [];
   const dragControls = useDragControls();
 
   useEffect(() => {
@@ -72,6 +101,9 @@ export default function CreateTaskSheet({
     setSelectedDays(new Set());
     setRecurrenceEnd("");
     setPriority(3);
+    setCategoryId(null);
+    setSteps([]);
+    setNewStep("");
   };
 
   const handleClose = () => {
@@ -84,15 +116,17 @@ export default function CreateTaskSheet({
     if (isRecurring && !deadline) return;
 
     const base = { title: title.trim(), description: description.trim(), assigneeIds: Array.from(assigneeIds), priority };
+    // A step typed but never "added" still counts — it's obviously meant to be included.
+    const finalSteps = newStep.trim() && steps.length < MAX_STEPS ? [...steps, newStep.trim()] : steps;
 
     if (isRecurring) {
       if (recurringDates.length === 0) return;
       // tasks.recurrence_id is a real `uuid` column in Postgres — it must be a valid
       // UUID or every insert in the batch is rejected.
       const recurrenceId = crypto.randomUUID();
-      onCreate(recurringDates.map((d) => ({ ...base, deadline: d, recurrenceId })));
+      onCreate(recurringDates.map((d) => ({ ...base, deadline: d, recurrenceId })), categoryId, finalSteps);
     } else {
-      onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }]);
+      onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }], categoryId, finalSteps);
     }
     handleClose();
   };
@@ -267,6 +301,85 @@ export default function CreateTaskSheet({
                   {PRIORITY_COLORS[priority].label} · 1 הכי דחוף, 5 הכי פחות
                 </p>
               </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-ink dark:text-ink-dark">
+                  שלבים <span className="font-normal text-ink-soft dark:text-ink-dark-soft">(לא חובה)</span>
+                </label>
+                <p className="mb-2 text-xs text-ink-soft dark:text-ink-dark-soft">
+                  השלבים יבוצעו לפי הסדר — כל שלב נפתח רק אחרי שהקודם הושלם.
+                </p>
+                {steps.length > 0 && (
+                  <ol className="mb-2 space-y-1.5">
+                    {steps.map((s, i) => (
+                      <li
+                        key={`${i}-${s}`}
+                        className="flex items-center gap-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2 text-sm text-ink dark:text-ink-dark"
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-500/20 text-[11px] font-bold text-brand-700 dark:text-brand-300">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{s}</span>
+                        <button type="button" onClick={() => moveStep(i, -1)} disabled={i === 0} aria-label="הזזה למעלה" className="p-0.5 text-ink-soft disabled:opacity-25">
+                          <ChevronUp size={15} />
+                        </button>
+                        <button type="button" onClick={() => moveStep(i, 1)} disabled={i === steps.length - 1} aria-label="הזזה למטה" className="p-0.5 text-ink-soft disabled:opacity-25">
+                          <ChevronDown size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSteps((prev) => prev.filter((_, j) => j !== i))}
+                          aria-label="מחיקת השלב"
+                          className="p-0.5 text-rose-500"
+                        >
+                          <X size={15} />
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {steps.length < MAX_STEPS ? (
+                  <div className="flex gap-2">
+                    <input
+                      value={newStep}
+                      maxLength={MAX_STEP_LENGTH}
+                      onChange={(e) => setNewStep(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addStep();
+                        }
+                      }}
+                      placeholder={steps.length === 0 ? "שלב ראשון..." : `שלב ${steps.length + 1}...`}
+                      className="min-w-0 flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-2.5 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={addStep}
+                      disabled={!newStep.trim()}
+                      className="flex shrink-0 items-center gap-1 rounded-2xl bg-brand-600 px-3.5 text-xs font-bold text-white disabled:opacity-40"
+                    >
+                      <Plus size={14} />
+                      הוספה
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-soft dark:text-ink-dark-soft">הגעת למקסימום של {MAX_STEPS} שלבים.</p>
+                )}
+              </div>
+
+              {currentUserId && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-ink dark:text-ink-dark">קטגוריה</label>
+                  {myCategories.length > 0 ? (
+                    <CategoryPicker categories={myCategories} value={categoryId} onChange={setCategoryId} />
+                  ) : (
+                    <p className="text-xs text-ink-soft dark:text-ink-dark-soft">
+                      עדיין אין לך קטגוריות — אפשר להוסיף בהגדרות ← &quot;הקטגוריות שלי&quot;
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Recurring task toggle — like Google Calendar's custom weekly repeat */}
               <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 p-4">

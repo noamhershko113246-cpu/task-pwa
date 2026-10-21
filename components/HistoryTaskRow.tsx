@@ -1,4 +1,6 @@
-import { Task, TeamMember } from "@/lib/types";
+import { Task, TeamMember, Category } from "@/lib/types";
+import { CategoryBadge } from "./CategoryChips";
+import StepProgress from "./StepProgress";
 import { formatCompletedAt } from "@/lib/utils";
 import StatusBadge from "./StatusBadge";
 import Avatar from "./Avatar";
@@ -9,11 +11,14 @@ export default function HistoryTaskRow({
   task,
   assignees,
   dateLabel,
+  category,
   onClick,
 }: {
   task: Task;
   assignees?: TeamMember[];
   dateLabel?: boolean;
+  category?: Category; // the viewer's own category for this task
+
   onClick?: (task: Task) => void;
 }) {
   return (
@@ -46,6 +51,12 @@ export default function HistoryTaskRow({
           <p className="truncate text-xs text-ink-soft dark:text-ink-dark-soft">{task.description}</p>
         )}
       </div>
+      {category && (
+        <span className="shrink-0">
+          <CategoryBadge category={category} />
+        </span>
+      )}
+      <StepProgress steps={task.steps} compact />
       {(task.attachments?.length ?? 0) > 0 && (
         <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-ink-soft dark:text-ink-dark-soft">
           <Paperclip size={12} />

@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
 import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2 } from "lucide-react";
-import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS } from "@/lib/types";
+import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS, StepDraft } from "@/lib/types";
+import { canEditSteps } from "@/lib/utils";
 import { timeAgoHebrew, toDatetimeLocalValue, firstName } from "@/lib/utils";
 import { uploadTaskAttachment, isImageAttachment, formatFileSize } from "@/lib/attachments";
 import Avatar from "./Avatar";
+import { CategoryPicker } from "./CategoryChips";
+import TaskStepsChecklist from "./TaskStepsChecklist";
+import { useTaskStore } from "@/lib/store";
 import clsx from "clsx";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "stuck", "done", "cancelled"];
@@ -36,6 +40,26 @@ export default function TaskDetailSheet({
   onRemoveAttachment?: (attachmentId: string) => void;
 }) {
   const pickerTeam = assignableTeam ?? team;
+  // Category and steps are drafts like every other field here — committed only on "save", so
+  // closing the sheet discards them too. (The category is personal; steps are shared by the task.)
+  const { categories, getTaskCategory, setTaskCategory, saveTaskSteps } = useTaskStore();
+  const myCategories = categories.filter((c) => c.userId === currentUserId);
+  const myCategoryId = task ? getTaskCategory(task.id, currentUserId)?.id ?? null : null;
+  const [draftCategoryId, setDraftCategoryId] = useState<string | null>(null);
+  const [baselineCategoryId, setBaselineCategoryId] = useState<string | null>(null);
+  const [draftSteps, setDraftSteps] = useState<StepDraft[]>([]);
+  const [baselineSteps, setBaselineSteps] = useState<StepDraft[]>([]); // the steps as they were when opened
+  const savedSteps: StepDraft[] = (task?.steps ?? []).map((s) => ({
+    key: s.id,
+    id: s.id,
+    title: s.title,
+    isDone: s.isDone,
+    doneBy: s.doneBy,
+    doneAt: s.doneAt,
+  }));
+  const stepsSignature = (list: StepDraft[]) => JSON.stringify(list.map((s) => [s.id ?? null, s.title, s.isDone]));
+  // Dirty = this person changed something, not "someone else changed the steps since I opened".
+  const stepsDirty = stepsSignature(draftSteps) !== stepsSignature(baselineSteps);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<Set<string>>(new Set());
@@ -66,6 +90,10 @@ export default function TaskDetailSheet({
       setStatus(task.status);
       setConfirmingDelete(false);
       setCommentText("");
+      setDraftCategoryId(myCategoryId);
+      setBaselineCategoryId(myCategoryId);
+      setDraftSteps(savedSteps);
+      setBaselineSteps(savedSteps);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id]);
@@ -84,15 +112,19 @@ export default function TaskDetailSheet({
     onClose();
   };
 
-  const handleSave = () => {
+  const handleSave = (statusOverride?: TaskStatus) => {
     if (!task || !title.trim() || assigneeIds.size === 0) return;
+    const finalStatus = statusOverride ?? status;
+    if (stepsDirty) saveTaskSteps(task.id, baselineSteps, draftSteps, currentUserId);
+    if (draftCategoryId !== baselineCategoryId) setTaskCategory(task.id, currentUserId, draftCategoryId);
     onUpdate(task.id, {
       title: title.trim(),
       description: description.trim(),
       assigneeIds: Array.from(assigneeIds),
       deadline: deadline ? new Date(deadline).toISOString() : null,
       priority,
-      status,
+      status: finalStatus,
+      ...(finalStatus === "done" && task.status !== "done" ? { previousStatus: task.status } : {}),
     });
     handleClose();
   };
@@ -229,6 +261,19 @@ export default function TaskDetailSheet({
                 />
               </div>
 
+              <TaskStepsChecklist
+                draft={draftSteps}
+                onChange={setDraftSteps}
+                dirty={stepsDirty}
+                editable={canEditSteps(task, currentUserId)}
+                taskOpen={task.status !== "done" && task.status !== "cancelled"}
+                team={team}
+                currentUserId={currentUserId}
+                // Starting the first step moves a "todo" task to in_progress, saved together with the steps.
+                onStarted={() => setStatus((s) => (s === "todo" ? "in_progress" : s))}
+                onMarkTaskDone={() => handleSave("done")}
+              />
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-ink dark:text-ink-dark">אחראי/ת — אפשר כמה</label>
                 <div className="flex flex-wrap gap-3">
@@ -307,6 +352,18 @@ export default function TaskDetailSheet({
                 </p>
               </div>
 
+              {myCategories.length > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-ink dark:text-ink-dark">הקטגוריה שלי</label>
+                  <CategoryPicker
+                    categories={myCategories}
+                    value={draftCategoryId}
+                    onChange={setDraftCategoryId}
+                  />
+                  <p className="mt-1.5 text-xs text-ink-soft dark:text-ink-dark-soft">רק את/ה רואה את הקטגוריה הזו</p>
+                </div>
+              )}
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-ink dark:text-ink-dark">סטטוס</label>
                 <div className="flex flex-wrap gap-2">
@@ -328,7 +385,7 @@ export default function TaskDetailSheet({
               </div>
 
               <button
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={!title.trim() || assigneeIds.size === 0}
                 className="w-full rounded-2xl bg-brand-600 py-3.5 font-bold text-white shadow-soft transition-all active:scale-[0.98] disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
               >

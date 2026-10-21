@@ -164,6 +164,20 @@ export function formatCompletedAt(iso: string | null | undefined): string {
   return `${datePart}, ${timePart}`;
 }
 
+/** Only whoever created a task may change its step list. Tasks with no recorded creator
+ *  (data from before created_by existed) stay editable by anyone who can open them. */
+export function canEditSteps(task: { createdBy?: string }, userId: string): boolean {
+  return !task.createdBy || task.createdBy === userId;
+}
+
+/** When a task was opened, e.g. "21.10.26, 14:32" — compact enough for a card corner. */
+export function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "2-digit" });
+  const timePart = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  return `${datePart}, ${timePart}`;
+}
+
 /** Sorts by deadline descending (latest first); tasks with no deadline always sort last. */
 export function compareByDeadlineDesc(a: { deadline: string | null }, b: { deadline: string | null }): number {
   if (!a.deadline && !b.deadline) return 0;

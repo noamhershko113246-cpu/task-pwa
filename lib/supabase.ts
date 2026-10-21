@@ -30,8 +30,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
                task_title, action, created_at)
   push_subscriptions(id uuid pk, user_id -> team_members, endpoint unique, p256dh, auth, created_at)
   overdue_reminder_log(task_id + user_id composite pk -> tasks/team_members, last_sent_at)
+  user_categories(id uuid pk, user_id -> team_members cascade, name, color (CATEGORY_COLORS key),
+                  sort_order int, created_at) — personal categories, owned by one user
+  task_category_assignments(task_id + user_id composite pk -> tasks/team_members cascade,
+                            category_id -> user_categories cascade, created_at) — each person's own
+                            category for a task; REPLICA IDENTITY FULL so realtime DELETEs carry category_id
 
-  Realtime is enabled on team_members/tasks/task_comments/activity_log (supabase_realtime
+  Realtime is enabled on team_members/tasks/task_comments/activity_log/user_categories/
+  task_category_assignments (supabase_realtime
   publication), which is what lib/store.tsx subscribes to for live sync across devices.
   push_subscriptions and overdue_reminder_log are read/written directly (no realtime needed).
 

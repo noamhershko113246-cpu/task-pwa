@@ -54,19 +54,19 @@ function ManagerBoardInner() {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
     if (status === "done") {
-      updateTask(taskId, { previousStatus: task.status, status });
+      updateTask(taskId, { previousStatus: task.status, status }, me?.id);
       setUndoTask({ id: taskId, title: task.title });
       if (undoTimer.current) clearTimeout(undoTimer.current);
       undoTimer.current = setTimeout(() => setUndoTask(null), UNDO_WINDOW_MS);
     } else {
-      updateTask(taskId, { status });
+      updateTask(taskId, { status }, me?.id);
     }
   };
 
   const handleUndo = () => {
     if (!undoTask) return;
     const task = tasks.find((t) => t.id === undoTask.id);
-    updateTask(undoTask.id, { status: task?.previousStatus ?? "todo" });
+    updateTask(undoTask.id, { status: task?.previousStatus ?? "todo" }, me?.id);
     setUndoTask(null);
     if (undoTimer.current) clearTimeout(undoTimer.current);
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode, useRef } from "react";
-import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT } from "./types";
+import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT, Category, TaskStep, StepDraft } from "./types";
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
 import { removeTaskAttachmentFile } from "./attachments";
@@ -31,6 +31,9 @@ function computeInitials(fullName: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2);
   return parts[0][0] + parts[parts.length - 1][0];
 }
+
+/** Max rows per insert request — keeps big recurring batches (instances × steps) from one giant request. */
+const INSERT_BATCH_SIZE = 500;
 
 // --- DB row <-> app type mapping (DB uses snake_case) ---
 
@@ -121,6 +124,53 @@ interface OrgDepartmentRow {
   is_seed: boolean;
 }
 
+interface StepRow {
+  id: string;
+  task_id: string;
+  title: string;
+  is_done: boolean;
+  done_by: string | null;
+  done_at: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+function stepFromRow(r: StepRow): TaskStep {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    title: r.title,
+    isDone: r.is_done,
+    doneBy: r.done_by ?? undefined,
+    doneAt: r.done_at ?? undefined,
+    sortOrder: r.sort_order,
+  };
+}
+
+interface CategoryRow {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+}
+
+interface TaskCategoryRow {
+  task_id: string;
+  user_id: string;
+  category_id: string;
+}
+
+/** taskCategories is keyed by task AND user — each person files a shared task under their own category. */
+function taskCategoryKey(taskId: string, userId: string) {
+  return `${taskId}:${userId}`;
+}
+
+function categoryFromRow(r: CategoryRow): Category {
+  return { id: r.id, userId: r.user_id, name: r.name, color: r.color, sortOrder: r.sort_order };
+}
+
 function memberFromRow(r: TeamRow): TeamMember {
   return {
     id: r.id,
@@ -196,7 +246,15 @@ interface TaskStoreValue {
   activity: ActivityEvent[];
   team: TeamMember[];
   orgUnits: OrgUnit[];
-  createTasks: (newTasks: Omit<Task, "id" | "createdAt" | "status">[]) => void;
+  categories: Category[];
+  // options.category: file every created task under this category for that one user (their own pick
+  // in the create sheet) — other assignees are left uncategorized, since categories are personal.
+  // options.steps: step titles, in order — copied onto every created task (each recurring instance
+  // gets its own fresh, all-open set).
+  createTasks: (
+    newTasks: Omit<Task, "id" | "createdAt" | "status">[],
+    options?: { category?: { userId: string; categoryId: string }; steps?: string[] }
+  ) => void;
   // actorId: who's actually performing this edit — required to log/notify correctly when a
   // reassignment amounts to one person transferring the task to another (see updateTask below).
   updateTask: (id: string, patch: Partial<Task>, actorId?: string) => void;
@@ -242,6 +300,18 @@ interface TaskStoreValue {
   // lets new units/departments be created instead of only picking from the seeded list.
   addOrgUnit: (key: string, label: string) => void;
   addOrgDepartment: (unitKey: string, name: string) => void;
+  addCategory: (userId: string, name: string, color: string) => void;
+  updateCategory: (id: string, patch: { name?: string; color?: string; sortOrder?: number }) => void;
+  removeCategory: (id: string) => void;
+  /** null clears it — the task goes back to "no category" for this user only. */
+  setTaskCategory: (taskId: string, userId: string, categoryId: string | null) => void;
+  getTaskCategory: (taskId: string, userId: string) => Category | undefined;
+  /**
+   * Commits the task sheet's edited step list in one go (on "save"): deletes, inserts, renames,
+   * reorders and done/undone changes. List edits are creator-only and the in-order lock is enforced
+   * by the UI (TaskStepsChecklist), not here.
+   */
+  saveTaskSteps: (taskId: string, baseline: StepDraft[], draft: StepDraft[], actorId: string) => void;
 }
 
 const TaskStoreContext = createContext<TaskStoreValue | null>(null);
@@ -253,9 +323,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [rawTasks, setRawTasks] = useState<Omit<Task, "comments">[]>([]);
   const [commentsByTask, setCommentsByTask] = useState<Record<string, Comment[]>>({});
   const [attachmentsByTask, setAttachmentsByTask] = useState<Record<string, Attachment[]>>({});
+  const [stepsByTask, setStepsByTask] = useState<Record<string, TaskStep[]>>({});
+  const stepsByTaskRef = useRef<Record<string, TaskStep[]>>({});
+  stepsByTaskRef.current = stepsByTask;
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [orgUnitRows, setOrgUnitRows] = useState<OrgUnitRow[]>([]);
   const [orgDeptRows, setOrgDeptRows] = useState<OrgDepartmentRow[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [taskCategories, setTaskCategories] = useState<Record<string, string>>({}); // taskCategoryKey -> category id
+  const categoriesRef = useRef<Category[]>([]);
+  categoriesRef.current = categories;
   const teamRef = useRef<TeamMember[]>([]);
   teamRef.current = team;
   const rawTasksRef = useRef<Omit<Task, "comments">[]>([]);
@@ -281,7 +358,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes, orgUnitsRes, orgDeptsRes] = await Promise.all([
+      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes, orgUnitsRes, orgDeptsRes, categoriesRes, taskCategoriesRes, stepsRes] = await Promise.all([
         supabase.from("team_members").select("*").order("created_at"),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("task_comments").select("*").order("created_at"),
@@ -289,6 +366,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("org_units").select("*").order("created_at"),
         supabase.from("org_departments").select("*").order("created_at"),
+        supabase.from("user_categories").select("*").order("sort_order").order("created_at"),
+        supabase.from("task_category_assignments").select("task_id, user_id, category_id"),
+        supabase.from("task_steps").select("*").order("sort_order").order("created_at"),
       ]);
       if (cancelled) return;
       if (teamRes.error || tasksRes.error) {
@@ -315,6 +395,21 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
       if (orgUnitsRes.data) setOrgUnitRows(orgUnitsRes.data as OrgUnitRow[]);
       if (orgDeptsRes.data) setOrgDeptRows(orgDeptsRes.data as OrgDepartmentRow[]);
+      if (categoriesRes.data) setCategories((categoriesRes.data as CategoryRow[]).map(categoryFromRow));
+      if (taskCategoriesRes.data) {
+        const map: Record<string, string> = {};
+        for (const row of taskCategoriesRes.data as TaskCategoryRow[]) {
+          map[taskCategoryKey(row.task_id, row.user_id)] = row.category_id;
+        }
+        setTaskCategories(map);
+      }
+      if (stepsRes.data) {
+        const grouped: Record<string, TaskStep[]> = {};
+        for (const row of stepsRes.data as StepRow[]) {
+          (grouped[row.task_id] ??= []).push(stepFromRow(row));
+        }
+        setStepsByTask(grouped);
+      }
       setLoading(false);
     }
     load();
@@ -413,6 +508,54 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           });
         }
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_categories" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const deletedId = (payload.old as CategoryRow).id;
+          setCategories((prev) => prev.filter((c) => c.id !== deletedId));
+          // The DB cascade removes its assignments too; mirror that locally right away.
+          setTaskCategories((prev) => Object.fromEntries(Object.entries(prev).filter(([, cid]) => cid !== deletedId)));
+        } else {
+          const c = categoryFromRow(payload.new as CategoryRow);
+          setCategories((prev) => {
+            const exists = prev.some((x) => x.id === c.id);
+            return exists ? prev.map((x) => (x.id === c.id ? c : x)) : [...prev, c];
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_category_assignments" }, (payload) => {
+        // task_category_assignments has REPLICA IDENTITY FULL, so a DELETE's old row is complete.
+        if (payload.eventType === "DELETE") {
+          const row = payload.old as TaskCategoryRow;
+          const key = taskCategoryKey(row.task_id, row.user_id);
+          setTaskCategories((prev) => {
+            if (prev[key] !== row.category_id) return prev; // already replaced by a newer pick
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        } else {
+          const row = payload.new as TaskCategoryRow;
+          setTaskCategories((prev) => ({ ...prev, [taskCategoryKey(row.task_id, row.user_id)]: row.category_id }));
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_steps" }, (payload) => {
+        // task_steps has REPLICA IDENTITY FULL, so a DELETE's old row includes task_id.
+        if (payload.eventType === "DELETE") {
+          const row = payload.old as StepRow;
+          setStepsByTask((prev) => {
+            const list = prev[row.task_id];
+            if (!list?.some((s) => s.id === row.id)) return prev;
+            return { ...prev, [row.task_id]: list.filter((s) => s.id !== row.id) };
+          });
+        } else {
+          const s = stepFromRow(payload.new as StepRow);
+          setStepsByTask((prev) => {
+            const list = prev[s.taskId] ?? [];
+            const exists = list.some((x) => x.id === s.id);
+            return { ...prev, [s.taskId]: exists ? list.map((x) => (x.id === s.id ? s : x)) : [...list, s] };
+          });
+        }
+      })
       .subscribe();
 
     return () => {
@@ -456,7 +599,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  const createTasks: TaskStoreValue["createTasks"] = useCallback((newTasks) => {
+  const createTasks: TaskStoreValue["createTasks"] = useCallback((newTasks, options) => {
     (async () => {
       const rows = newTasks.map((t) => ({
         title: t.title,
@@ -472,6 +615,60 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (reportIfError(error, "יצירת המשימה")) return;
       if (data) {
         const createdRows = data as TaskRow[];
+
+        // Steps and category are part of the task — if either fails to save, the whole creation is
+        // rolled back (deleting the tasks cascades away anything partially saved) rather than leaving
+        // a task silently missing its steps/category.
+        const rollBack = async (label: string, err: { message: string }) => {
+          await supabase.from("tasks").delete().in("id", createdRows.map((r) => r.id));
+          reportIfError(err, label);
+        };
+
+        const stepTitles = (options?.steps ?? []).map((s) => s.trim()).filter(Boolean);
+        const insertedSteps: StepRow[] = [];
+        if (stepTitles.length > 0) {
+          const stepRows = createdRows.flatMap((row) =>
+            stepTitles.map((title, i) => ({ task_id: row.id, title, sort_order: i }))
+          );
+          // A long recurring series × many steps can be thousands of rows — sent in batches.
+          for (let i = 0; i < stepRows.length; i += INSERT_BATCH_SIZE) {
+            const { data: batch, error: stepsError } = await supabase
+              .from("task_steps")
+              .insert(stepRows.slice(i, i + INSERT_BATCH_SIZE))
+              .select();
+            if (stepsError) return rollBack("יצירת המשימה", stepsError);
+            insertedSteps.push(...((batch ?? []) as StepRow[]));
+          }
+        }
+
+        // Every instance of a recurring batch lands in the same category.
+        if (options?.category) {
+          const { userId, categoryId } = options.category;
+          const catRows = createdRows.map((row) => ({ task_id: row.id, user_id: userId, category_id: categoryId }));
+          for (let i = 0; i < catRows.length; i += INSERT_BATCH_SIZE) {
+            const { error: catError } = await supabase
+              .from("task_category_assignments")
+              .insert(catRows.slice(i, i + INSERT_BATCH_SIZE));
+            if (catError) return rollBack("יצירת המשימה", catError);
+          }
+          setTaskCategories((prev) => {
+            const next = { ...prev };
+            for (const row of createdRows) next[taskCategoryKey(row.id, userId)] = categoryId;
+            return next;
+          });
+        }
+
+        if (insertedSteps.length > 0) {
+          setStepsByTask((prev) => {
+            const next = { ...prev };
+            for (const r of insertedSteps) {
+              const list = next[r.task_id] ?? [];
+              if (!list.some((s) => s.id === r.id)) next[r.task_id] = [...list, stepFromRow(r)];
+            }
+            return next;
+          });
+        }
+
         showToast(createdRows.length > 1 ? `${createdRows.length} משימות נוצרו בהצלחה` : "המשימה נוצרה בהצלחה");
 
         // Build every activity_log row up front and insert them all in one request,
@@ -543,15 +740,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from("tasks").update(dbPatch).eq("id", id);
       if (reportIfError(error, "עדכון המשימה")) return;
 
-      if (patch.status !== undefined) {
-        const task = rawTasksRef.current.find((t) => t.id === id);
-        const managerIds = teamRef.current.filter((m) => m.isManager).map((m) => m.id);
-        if (task) {
+      // Status pushes go only to the task's own assignees — never to every manager in the system,
+      // and never to whoever made the change themselves.
+      if (patch.status !== undefined && taskBeforeUpdate) {
+        const recipients = (patch.assigneeIds ?? taskBeforeUpdate.assigneeIds).filter((uid) => uid !== actorId);
+        for (const uid of recipients) {
           sendPush(
-            managerIds,
+            [uid],
             "עדכון סטטוס במשימה",
-            `"${task.title}" עודכנה ל: ${STATUS_LABELS[patch.status]}`,
-            "/manager"
+            `"${taskBeforeUpdate.title}" עודכנה ל: ${STATUS_LABELS[patch.status]}`,
+            `/staff?user=${uid}`
           );
         }
       }
@@ -788,9 +986,162 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [reportIfError, showToast]);
 
+  const addCategory: TaskStoreValue["addCategory"] = useCallback((userId, name, color) => {
+    (async () => {
+      const trimmedName = name.trim();
+      const mine = categoriesRef.current.filter((c) => c.userId === userId);
+      const sortOrder = mine.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1;
+      const { data, error } = await supabase
+        .from("user_categories")
+        .insert({ user_id: userId, name: trimmedName, color, sort_order: sortOrder })
+        .select()
+        .single();
+      if (reportIfError(error, "יצירת הקטגוריה")) return;
+      // Applied locally right away — see the same note on updateMember above.
+      if (data) {
+        const c = categoryFromRow(data as CategoryRow);
+        setCategories((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
+      }
+    })();
+  }, [reportIfError]);
+
+  const updateCategory: TaskStoreValue["updateCategory"] = useCallback((id, patch) => {
+    (async () => {
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) dbPatch.name = patch.name.trim();
+      if (patch.color !== undefined) dbPatch.color = patch.color;
+      if (patch.sortOrder !== undefined) dbPatch.sort_order = patch.sortOrder;
+      const { error } = await supabase.from("user_categories").update(dbPatch).eq("id", id);
+      if (reportIfError(error, "עדכון הקטגוריה")) return;
+      setCategories((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, ...patch, name: patch.name?.trim() ?? c.name } : c))
+      );
+    })();
+  }, [reportIfError]);
+
+  const removeCategory: TaskStoreValue["removeCategory"] = useCallback((id) => {
+    (async () => {
+      const { error } = await supabase.from("user_categories").delete().eq("id", id);
+      if (reportIfError(error, "מחיקת הקטגוריה")) return;
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+      setTaskCategories((prev) => Object.fromEntries(Object.entries(prev).filter(([, cid]) => cid !== id)));
+    })();
+  }, [reportIfError]);
+
+  const setTaskCategory: TaskStoreValue["setTaskCategory"] = useCallback((taskId, userId, categoryId) => {
+    (async () => {
+      const key = taskCategoryKey(taskId, userId);
+      const { error } = categoryId
+        ? await supabase
+            .from("task_category_assignments")
+            .upsert({ task_id: taskId, user_id: userId, category_id: categoryId }, { onConflict: "task_id,user_id" })
+        : await supabase.from("task_category_assignments").delete().eq("task_id", taskId).eq("user_id", userId);
+      if (reportIfError(error, "שיוך הקטגוריה")) return;
+      setTaskCategories((prev) => {
+        const next = { ...prev };
+        if (categoryId) next[key] = categoryId;
+        else delete next[key];
+        return next;
+      });
+    })();
+  }, [reportIfError]);
+
+  const saveTaskSteps: TaskStoreValue["saveTaskSteps"] = useCallback((taskId, baseline, draft, actorId) => {
+    (async () => {
+      // Diffed against what the sheet saw when it opened (baseline), NOT the live list — so saving
+      // only applies this person's own edits and never reverts a step someone else changed meanwhile.
+      const existing = baseline.filter((s): s is StepDraft & { id: string } => Boolean(s.id));
+      const existingById = new Map(existing.map((s, i) => [s.id, { ...s, sortOrder: i }]));
+      const errors: ({ message: string } | null)[] = [];
+
+      const removedIds = existing.filter((s) => !draft.some((d) => d.id === s.id)).map((s) => s.id);
+      if (removedIds.length > 0) {
+        errors.push((await supabase.from("task_steps").delete().in("id", removedIds)).error);
+      }
+
+      const now = new Date().toISOString();
+      const inserts: Record<string, unknown>[] = [];
+      const updates: PromiseLike<{ error: { message: string } | null }>[] = [];
+      draft.forEach((d, i) => {
+        const before = d.id ? existingById.get(d.id) : undefined;
+        if (!before) {
+          inserts.push({
+            task_id: taskId,
+            title: d.title.trim(),
+            sort_order: i,
+            is_done: d.isDone,
+            done_by: d.isDone ? actorId : null,
+            done_at: d.isDone ? now : null,
+          });
+          return;
+        }
+        const structural: Record<string, unknown> = {};
+        if (d.title.trim() !== before.title) structural.title = d.title.trim();
+        if (before.sortOrder !== i) structural.sort_order = i;
+        if (Object.keys(structural).length > 0) {
+          updates.push(supabase.from("task_steps").update(structural).eq("id", before.id));
+        }
+        // Done-state changes are conditional on the row still being in the state we saw, so two
+        // people finishing the same step at once don't overwrite each other's "who & when".
+        if (d.isDone && !before.isDone) {
+          updates.push(
+            supabase.from("task_steps").update({ is_done: true, done_by: actorId, done_at: now }).eq("id", before.id).eq("is_done", false)
+          );
+        } else if (!d.isDone && before.isDone) {
+          updates.push(
+            supabase.from("task_steps").update({ is_done: false, done_by: null, done_at: null }).eq("id", before.id).eq("is_done", true)
+          );
+        }
+      });
+      if (inserts.length > 0) errors.push((await supabase.from("task_steps").insert(inserts)).error);
+      for (const res of await Promise.all(updates)) errors.push(res.error);
+
+      // Re-read the task's steps so local state matches exactly what the DB ended up with.
+      const { data } = await supabase.from("task_steps").select("*").eq("task_id", taskId).order("sort_order");
+      if (data) setStepsByTask((prev) => ({ ...prev, [taskId]: (data as StepRow[]).map(stepFromRow) }));
+      if (reportIfError(errors.find(Boolean) ?? null, "שמירת השלבים")) return;
+
+      // One activity entry per save (not one per step), so a long checklist doesn't flood the feed.
+      const newlyDone = draft.filter((d) => d.isDone && !(d.id && existingById.get(d.id)?.isDone)).length;
+      if (newlyDone > 0) {
+        const doneCount = draft.filter((d) => d.isDone).length;
+        const task = rawTasksRef.current.find((t) => t.id === taskId);
+        await logActivity({
+          userId: actorId,
+          taskId,
+          taskTitle: task?.title ?? "",
+          action:
+            doneCount === draft.length
+              ? `השלים/ה את כל השלבים (${draft.length})`
+              : `התקדם/ה בשלבים (${doneCount}/${draft.length})`,
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportIfError, logActivity]);
+
+  const sortedCategories = useMemo(
+    () => [...categories].sort((a, b) => a.sortOrder - b.sortOrder),
+    [categories]
+  );
+
+  const getTaskCategory = useCallback(
+    (taskId: string, userId: string) => {
+      const categoryId = taskCategories[taskCategoryKey(taskId, userId)];
+      return categoryId ? categories.find((c) => c.id === categoryId) : undefined;
+    },
+    [taskCategories, categories]
+  );
+
   const tasks = useMemo<Task[]>(
-    () => rawTasks.map((t) => ({ ...t, comments: commentsByTask[t.id] ?? [], attachments: attachmentsByTask[t.id] ?? [] })),
-    [rawTasks, commentsByTask, attachmentsByTask]
+    () =>
+      rawTasks.map((t) => ({
+        ...t,
+        comments: commentsByTask[t.id] ?? [],
+        attachments: attachmentsByTask[t.id] ?? [],
+        steps: [...(stepsByTask[t.id] ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+      })),
+    [rawTasks, commentsByTask, attachmentsByTask, stepsByTask]
   );
 
   // Joins the two flat DB-shaped row lists into the app's OrgUnit[] shape. Falls back to the
@@ -809,11 +1160,15 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   // so this only needs to change when the actual DATA changes — not on every render.
   const value = useMemo(
     () => ({
-      loading, tasks, activity, team, orgUnits, createTasks, updateTask, deleteTask, addComment,
+      loading, tasks, activity, team, orgUnits, categories: sortedCategories, createTasks, updateTask, deleteTask, addComment,
       addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment,
+      addCategory, updateCategory, removeCategory, setTaskCategory, getTaskCategory,
+      saveTaskSteps,
     }),
-    [loading, tasks, activity, team, orgUnits, createTasks, updateTask, deleteTask, addComment,
-      addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment]
+    [loading, tasks, activity, team, orgUnits, sortedCategories, createTasks, updateTask, deleteTask, addComment,
+      addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment,
+      addCategory, updateCategory, removeCategory, setTaskCategory, getTaskCategory,
+      saveTaskSteps]
   );
 
   return <TaskStoreContext.Provider value={value}>{children}</TaskStoreContext.Provider>;

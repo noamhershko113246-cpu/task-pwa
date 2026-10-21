@@ -116,7 +116,13 @@ function ManagerHistoryInner() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         team={assignableTeam}
-        onCreate={(newTasks) => createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })))}
+        currentUserId={me.id}
+        onCreate={(newTasks, categoryId, steps) =>
+          createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })), {
+            category: categoryId ? { userId: me.id, categoryId } : undefined,
+            steps,
+          })
+        }
       />
 
       <BottomNav base="manager" />
