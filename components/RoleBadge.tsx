@@ -43,7 +43,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
     return (
       <span
         className={clsx(
-          "inline-flex items-center gap-1 rounded-full bg-unit-red/15 px-2.5 py-1 text-xs font-bold text-unit-red dark:bg-unit-red/20",
+          "inline-flex items-center gap-1 rounded-full bg-unit-red/15 px-2.5 py-1 text-xs font-bold text-unit-red dark:bg-unit-red/20 dark:text-unit-red-light",
           className
         )}
       >
@@ -56,7 +56,7 @@ export default function RoleBadge({ member, className }: { member: TeamMember; c
     return (
       <span
         className={clsx(
-          "inline-flex items-center gap-1 rounded-full bg-unit-tan/20 px-2.5 py-1 text-xs font-bold text-unit-tan dark:bg-unit-tan/15",
+          "inline-flex items-center gap-1 rounded-full bg-unit-tan/20 px-2.5 py-1 text-xs font-bold text-unit-tan-deep dark:bg-unit-tan/15 dark:text-unit-tan",
           className
         )}
       >

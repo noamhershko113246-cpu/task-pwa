@@ -7,7 +7,8 @@ import { firstName, formatCreatedAt } from "@/lib/utils";
 import clsx from "clsx";
 
 /**
- * Ordered, locked checklist — edits a DRAFT owned by the task sheet; nothing is saved until the
+ * Ordered, locked checklist. Ticking/unticking a step is saved immediately (onToggleStep); edits to
+ * the list itself (add/rename/delete/reorder) are a DRAFT owned by the task sheet, saved with the
  * sheet's "save". Only the current step (first open one) can be checked, and only the last finished
  * one unchecked, so done steps are always a prefix of the list. The list itself
  * (add/rename/delete/reorder) is editable only when `editable` (the task's creator).
@@ -22,6 +23,7 @@ export default function TaskStepsChecklist({
   currentUserId,
   onStarted,
   onMarkTaskDone,
+  onToggleStep,
 }: {
   draft: StepDraft[];
   onChange: (next: StepDraft[]) => void;
@@ -33,6 +35,8 @@ export default function TaskStepsChecklist({
   /** Fired when checking a step should move a "todo" task to in_progress — the sheet updates its status field. */
   onStarted: () => void;
   onMarkTaskDone: () => void;
+  /** Persists a tick/untick of a saved step immediately (see handleToggle). */
+  onToggleStep?: (stepId: string, done: boolean) => void;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [newStep, setNewStep] = useState("");
@@ -47,13 +51,27 @@ export default function TaskStepsChecklist({
   const doneCount = draft.filter((s) => s.isDone).length;
   const allDone = draft.length > 0 && doneCount === draft.length;
 
+  // Ticking / unticking a SAVED step is persisted right away through onToggleStep (so closing the
+  // sheet never loses progress). A step that was only just added and isn't saved yet has no id to
+  // write against, so it falls back to the draft and is committed with the sheet's "save".
   const handleToggle = (index: number) => {
-    if (index === currentIndex) {
-      if (doneCount === 0) onStarted();
-      onChange(draft.map((s, i) => (i === index ? { ...s, isDone: true, doneBy: currentUserId, doneAt: new Date().toISOString() } : s)));
-    } else if (index === lastDoneIndex) {
-      onChange(draft.map((s, i) => (i === index ? { ...s, isDone: false, doneBy: undefined, doneAt: undefined } : s)));
+    const step = draft[index];
+    const check = index === currentIndex;
+    if (!check && index !== lastDoneIndex) return;
+    if (check && doneCount === 0) onStarted();
+    if (step.id && onToggleStep) {
+      onToggleStep(step.id, check);
+      return;
     }
+    onChange(
+      draft.map((s, i) =>
+        i === index
+          ? check
+            ? { ...s, isDone: true, doneBy: currentUserId, doneAt: new Date().toISOString() }
+            : { ...s, isDone: false, doneBy: undefined, doneAt: undefined }
+          : s
+      )
+    );
   };
 
   const handleAdd = () => {
@@ -146,7 +164,7 @@ export default function TaskStepsChecklist({
                     {s.isDone ? (
                       <Check size={13} strokeWidth={3} className="text-white" />
                     ) : locked ? (
-                      <Lock size={11} className="text-zinc-400" />
+                      <Lock size={11} className="text-zinc-500 dark:text-zinc-400" />
                     ) : null}
                   </button>
                 )}
@@ -161,7 +179,10 @@ export default function TaskStepsChecklist({
                       onBlur={commitRename}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") e.currentTarget.blur(); // commits once, via onBlur
-                        if (e.key === "Escape") setRenamingKey(null);
+                        if (e.key === "Escape") {
+                          e.preventDefault(); // cancels this rename only — not the sheet it sits in
+                          setRenamingKey(null);
+                        }
                       }}
                       className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
                     />
@@ -176,7 +197,7 @@ export default function TaskStepsChecklist({
                         "text-sm leading-snug",
                         s.isDone && "text-ink-soft line-through dark:text-ink-dark-soft",
                         isCurrent && "font-semibold text-ink dark:text-ink-dark",
-                        locked && "text-ink-soft/70 dark:text-ink-dark-soft/70",
+                        locked && "text-ink-soft dark:text-ink-dark-soft",
                         editMode && "cursor-text"
                       )}
                     >
@@ -219,7 +240,7 @@ export default function TaskStepsChecklist({
       )}
 
       {dirty && (
-        <p className="mt-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+        <p className="mt-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
           יש שינויים בשלבים — הם יישמרו בלחיצה על &quot;שמירה&quot;
         </p>
       )}
@@ -248,6 +269,7 @@ export default function TaskStepsChecklist({
             onChange={(e) => setNewStep(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder={draft.length === 0 ? "חלק/י את המשימה לשלבים — שלב ראשון..." : `שלב ${draft.length + 1}...`}
+            aria-label="הוספת שלב למשימה"
             className="min-w-0 flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-2.5 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
           />
           <button

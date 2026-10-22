@@ -6,7 +6,7 @@ export default function LoadingScreen() {
       <div className="relative h-16 w-16 overflow-hidden rounded-2xl shadow-soft ring-1 ring-black/5 dark:ring-white/10 animate-pulse-soft">
         <Image src="/logo.png" alt="סמל היחידה" fill sizes="64px" className="object-cover" />
       </div>
-      <p className="text-sm font-medium text-ink-soft dark:text-ink-dark-soft">טוען...</p>
+      <p role="status" className="text-sm font-medium text-ink-soft dark:text-ink-dark-soft">טוען...</p>
     </main>
   );
 }

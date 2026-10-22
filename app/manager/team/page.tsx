@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -22,6 +23,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import BottomNav from "@/components/BottomNav";
 
 function TeamManagementInner() {
+  useDocumentTitle("ניהול צוות");
   const router = useRouter();
   const { team, tasks, loading, orgUnits, addMember, updateMember, removeMember } = useTaskStore();
   const [name, setName] = useState("");
@@ -69,8 +71,11 @@ function TeamManagementInner() {
   // sees her own isolated (unit, department) pair's roster. Managers are
   // included for the super admin's view since "manage all users" spans ranks
   // too, not just soldiers.
+  // The super admin's own card IS included (marked "אתה", and without a remove button so they
+  // can't delete themselves) — leaving it out meant that after moving to another unit there was
+  // nowhere on this screen to see or edit where you now sit.
   const roster = isSuperAdmin
-    ? team.filter((m) => m.id !== viewer?.id)
+    ? team
     : team.filter((m) => !m.isManager && (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === myUnit);
 
   // Group the super admin's cross-unit roster by (brigade, department) PAIR, not department
@@ -158,13 +163,19 @@ function TeamManagementInner() {
     const department = editDept || DEFAULT_DEPARTMENT;
     const brigade = editUnit || HQ_UNIT;
     const { isManager, isSuperManager } = flagsFromRank(editRank);
+    // A manager must sit in the SAME (unit, department) as the person — so when someone is moved
+    // elsewhere (including the super admin moving themselves), the old manager no longer applies.
+    // Keeping it would leave a cross-unit link that shows up as "ללא שיוך" in the org chart.
+    const manager = editManagerId ? team.find((m) => m.id === editManagerId) : undefined;
+    const managerStillValid =
+      !!manager && manager.brigade === brigade && (manager.department ?? DEFAULT_DEPARTMENT) === department;
     updateMember(id, {
       department,
       brigade,
       title: editTitle.trim() || null,
       isManager,
       isSuperManager,
-      managerId: editManagerId || null,
+      managerId: managerStillValid ? editManagerId : null,
     });
     setEditingDeptId(null);
   };
@@ -187,7 +198,7 @@ function TeamManagementInner() {
 
   return (
     <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
-      <header className="mb-5 flex items-center justify-between">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader
           title={isSuperAdmin ? "ניהול-על — כל היחידות" : "ניהול משרד"}
           subtitle={
@@ -219,11 +230,13 @@ function TeamManagementInner() {
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="שם פרטי ושם משפחה (זה גם מה שישמש להתחברות)"
-            className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+                aria-label="שם פרטי ושם משפחה (זה גם מה שישמש להתחברות)"
+            className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
           />
           {isSuperAdmin && (
             <>
               <select
+                aria-label="יחידה"
                 value={newUnit}
                 onChange={(e) => handleNewUnitChange(e.target.value)}
                 className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
@@ -235,6 +248,7 @@ function TeamManagementInner() {
                 ))}
               </select>
               <select
+                aria-label="מדור"
                 value={newDept}
                 onChange={(e) => setNewDept(e.target.value)}
                 className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark outline-none transition-colors"
@@ -249,11 +263,12 @@ function TeamManagementInner() {
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
-                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+                aria-label="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
+                className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
               />
             </>
           )}
-          {error && <p className="text-sm font-medium text-rose-500">{error}</p>}
+          {error && <p className="text-sm font-medium text-rose-700 dark:text-rose-400">{error}</p>}
           <button
             onClick={handleAdd}
             className="w-full rounded-2xl bg-brand-600 py-3 font-bold text-white shadow-soft transition-all active:scale-[0.98]"
@@ -289,6 +304,11 @@ function TeamManagementInner() {
                         own line keeps the name fully readable instead. */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <p className="truncate text-sm font-bold text-ink dark:text-ink-dark">{member.name}</p>
+                      {member.id === viewer?.id && (
+                        <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+                          אתה
+                        </span>
+                      )}
                       <RoleBadge member={member} />
                     </div>
                     {member.title && (
@@ -311,7 +331,7 @@ function TeamManagementInner() {
                       <Pencil size={15} />
                     </button>
                   )}
-                  {(isFullManager || isSuperAdmin) && confirmingRemoveId !== member.id && (
+                  {(isFullManager || isSuperAdmin) && member.id !== viewer?.id && confirmingRemoveId !== member.id && (
                     <button
                       onClick={() => setConfirmingRemoveId(member.id)}
                       aria-label={`הסרת ${member.name}`}
@@ -325,6 +345,7 @@ function TeamManagementInner() {
                 {isSuperAdmin && editingDeptId === member.id && (
                   <div className="mt-3 space-y-2 rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50/60 dark:bg-brand-500/10 p-3.5">
                     <select
+                aria-label="יחידה"
                       value={editUnit}
                       onChange={(e) => handleEditUnitChange(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
@@ -336,6 +357,7 @@ function TeamManagementInner() {
                       ))}
                     </select>
                     <select
+                aria-label="מדור"
                       value={editDept}
                       onChange={(e) => setEditDept(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
@@ -350,6 +372,7 @@ function TeamManagementInner() {
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                       placeholder="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
+                aria-label="תפקיד / תואר (לא חובה, למשל קצינת סגל)"
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
                     />
                     <div className="border-t border-brand-200/60 dark:border-brand-500/20 pt-2">
@@ -357,6 +380,7 @@ function TeamManagementInner() {
                         היררכיה בתוך המדור (סופר-אדמין בלבד)
                       </p>
                       <select
+                aria-label="דרגה"
                         value={editRank}
                         onChange={(e) => {
                           const rank = e.target.value as DepartmentRank;
@@ -384,6 +408,7 @@ function TeamManagementInner() {
                         ))}
                       </select>
                       <select
+                aria-label="מפקד/ת ישיר/ה"
                         value={editManagerId}
                         onChange={(e) => setEditManagerId(e.target.value)}
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"

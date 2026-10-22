@@ -30,7 +30,7 @@ export default function Avatar({
   return (
     <div
       className={clsx(
-        "flex items-center justify-center rounded-full bg-gradient-to-br font-bold text-white shrink-0",
+        "flex items-center justify-center rounded-full bg-gradient-avatar font-bold text-white shrink-0",
         member.colorFrom,
         member.colorTo,
         sizes[size],

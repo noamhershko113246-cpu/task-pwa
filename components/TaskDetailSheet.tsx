@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
 import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2 } from "lucide-react";
+import { useDialog } from "@/lib/useDialog";
 import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS, StepDraft } from "@/lib/types";
 import { canEditSteps } from "@/lib/utils";
 import { timeAgoHebrew, toDatetimeLocalValue, firstName } from "@/lib/utils";
@@ -11,6 +12,7 @@ import Avatar from "./Avatar";
 import { CategoryPicker } from "./CategoryChips";
 import TaskStepsChecklist from "./TaskStepsChecklist";
 import { useTaskStore } from "@/lib/store";
+import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import clsx from "clsx";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "stuck", "done", "cancelled"];
@@ -40,9 +42,14 @@ export default function TaskDetailSheet({
   onRemoveAttachment?: (attachmentId: string) => void;
 }) {
   const pickerTeam = assignableTeam ?? team;
-  // Category and steps are drafts like every other field here — committed only on "save", so
+  const keyboard = useKeyboardInset(task !== null);
+  const dialogRef = useDialog<HTMLDivElement>(task !== null, onClose);
+  const titleId = useId();
+  // Category and the step LIST are drafts like every other field here — committed only on "save", so
   // closing the sheet discards them too. (The category is personal; steps are shared by the task.)
-  const { categories, getTaskCategory, setTaskCategory, saveTaskSteps } = useTaskStore();
+  // Ticking a step is the exception: it's saved immediately (setStepDone), so progress survives
+  // closing the sheet just like a status change on a regular task.
+  const { categories, getTaskCategory, setTaskCategory, saveTaskSteps, setStepDone } = useTaskStore();
   const myCategories = categories.filter((c) => c.userId === currentUserId);
   const myCategoryId = task ? getTaskCategory(task.id, currentUserId)?.id ?? null : null;
   const [draftCategoryId, setDraftCategoryId] = useState<string | null>(null);
@@ -97,6 +104,36 @@ export default function TaskDetailSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id]);
+
+  // Done-state lives in the store (it's saved the moment a step is ticked — by this person or, over
+  // realtime, by someone else), so mirror it into BOTH the draft and its baseline whenever it
+  // changes. That keeps the checklist showing the real progress while leaving unsaved list edits
+  // (rename / add / delete / reorder) alone, and means a tick never counts as an unsaved change.
+  const liveDoneSignature = (task?.steps ?? []).map((s) => `${s.id}:${s.isDone ? 1 : 0}`).join(",");
+  useEffect(() => {
+    if (!task) return;
+    const live = new Map((task.steps ?? []).map((s) => [s.id, s]));
+    const sync = (list: StepDraft[]) =>
+      list.map((s) => {
+        const l = s.id ? live.get(s.id) : undefined;
+        return l ? { ...s, isDone: l.isDone, doneBy: l.doneBy, doneAt: l.doneAt } : s;
+      });
+    setDraftSteps(sync);
+    setBaselineSteps(sync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDoneSignature]);
+
+  // Persist a tick right away. The first tick on a "todo" task also moves it to "in_progress" now,
+  // like changing the status by hand would.
+  const handleStepToggle = (stepId: string, done: boolean) => {
+    if (!task) return;
+    setStepDone(task.id, stepId, done, currentUserId);
+  };
+  const handleStepsStarted = () => {
+    if (!task || task.status !== "todo") return;
+    setStatus((s) => (s === "todo" ? "in_progress" : s));
+    onUpdate(task.id, { status: "in_progress" });
+  };
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => {
@@ -192,7 +229,12 @@ export default function TaskDetailSheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
-            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            style={keyboard ? { bottom: keyboard, maxHeight: `calc(90dvh - ${keyboard}px)` } : undefined}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}
@@ -202,7 +244,7 @@ export default function TaskDetailSheet({
             </div>
 
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-ink dark:text-ink-dark">פרטי משימה</h2>
+              <h2 id={titleId} className="text-lg font-extrabold text-ink dark:text-ink-dark">פרטי משימה</h2>
               <button
                 onClick={handleClose}
                 aria-label="סגירה"
@@ -243,8 +285,8 @@ export default function TaskDetailSheet({
 
             <div className="space-y-5">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם המשימה</label>
-                <input
+                <label htmlFor="td-f1" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם המשימה</label>
+                <input id="td-f1"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
@@ -252,8 +294,8 @@ export default function TaskDetailSheet({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">תיאור</label>
-                <textarea
+                <label htmlFor="td-f2" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">תיאור</label>
+                <textarea id="td-f2"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
@@ -269,8 +311,9 @@ export default function TaskDetailSheet({
                 taskOpen={task.status !== "done" && task.status !== "cancelled"}
                 team={team}
                 currentUserId={currentUserId}
-                // Starting the first step moves a "todo" task to in_progress, saved together with the steps.
-                onStarted={() => setStatus((s) => (s === "todo" ? "in_progress" : s))}
+                // Starting the first step moves a "todo" task to in_progress immediately.
+                onStarted={handleStepsStarted}
+                onToggleStep={handleStepToggle}
                 onMarkTaskDone={() => handleSave("done")}
               />
 
@@ -282,13 +325,14 @@ export default function TaskDetailSheet({
                       key={m.id}
                       onClick={() => toggleAssignee(m.id)}
                       className={clsx(
-                        "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full bg-gradient-to-br px-3 font-bold text-white text-xs transition-all active:scale-90",
+                        "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full bg-gradient-avatar px-3 font-bold text-white text-xs transition-all active:scale-90",
                         m.colorFrom,
                         m.colorTo,
                         assigneeIds.has(m.id)
                           ? "ring-4 ring-offset-2 ring-brand-400 dark:ring-offset-surface-dark-card scale-105"
-                          : "opacity-60 hover:opacity-100"
+                          : "saturate-50 hover:saturate-100"
                       )}
+                      aria-pressed={assigneeIds.has(m.id)}
                     >
                       {firstName(m.name)}
                     </button>
@@ -297,11 +341,12 @@ export default function TaskDetailSheet({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
+                <label htmlFor="td-deadline" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
                   דדליין (תאריך ושעה) — לא חובה
                 </label>
                 <div className="relative">
                   <input
+                    id="td-deadline"
                     type="datetime-local"
                     value={deadline}
                     onChange={(e) => setDeadline(e.target.value)}
@@ -319,7 +364,7 @@ export default function TaskDetailSheet({
                       type="button"
                       onClick={() => setDeadline("")}
                       aria-label="הסרת דדליין"
-                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     >
                       <X size={16} />
                     </button>
@@ -338,7 +383,7 @@ export default function TaskDetailSheet({
                         onClick={() => setPriority(p)}
                         className={clsx(
                           "flex-1 rounded-xl py-2.5 text-center text-xs font-bold transition-all active:scale-95",
-                          priority === p ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "opacity-70"
+                          priority === p ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "saturate-50"
                         )}
                         style={{ backgroundColor: c.bg, color: c.fg }}
                       >
@@ -467,7 +512,7 @@ export default function TaskDetailSheet({
                               onRemoveAttachment?.(a.id);
                             }}
                             aria-label="הסרת הקובץ"
-                            className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                            className="absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                           >
                             <X size={14} />
                           </button>
@@ -556,7 +601,8 @@ export default function TaskDetailSheet({
                     onChange={(e) => setCommentText(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSendComment()}
                     placeholder="הוספת הערה..."
-                    className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-2.5 text-sm text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+                    aria-label="הוספת הערה"
+                    className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-2.5 text-sm text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
                   />
                   <button
                     onClick={handleSendComment}

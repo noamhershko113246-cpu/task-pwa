@@ -25,7 +25,10 @@ export default function HistoryTaskRow({
     <div
       onClick={() => onClick?.(task)}
       role={onClick ? "button" : undefined}
-      className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card"
+      // flex-wrap + a title basis: on wide phones everything still fits on one line exactly as
+      // before, but on 320–375px phones the badges (category, steps, attachments, status) drop to
+      // a second line instead of squeezing the title down to a few pixels.
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card"
     >
       <PriorityBadge priority={task.priority} variant="dot" />
       {assignees && assignees.length > 0 && (
@@ -40,7 +43,7 @@ export default function HistoryTaskRow({
           )}
         </div>
       )}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-32">
         <p className="truncate text-sm font-semibold text-ink dark:text-ink-dark">{task.title}</p>
         {dateLabel ? (
           <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-ink-soft dark:text-ink-dark-soft">

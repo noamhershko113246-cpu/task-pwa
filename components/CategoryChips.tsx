@@ -55,7 +55,7 @@ export function CategoryPicker({
             aria-pressed={active}
             className={clsx(
               "rounded-full px-3.5 py-2 text-xs font-bold transition-all active:scale-95",
-              active ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "opacity-75"
+              active ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "saturate-50"
             )}
             style={{ backgroundColor: c.bg, color: c.fg }}
           >
@@ -89,7 +89,7 @@ export function CategoryFilter({
   const pill = (active: boolean) =>
     clsx(
       "shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition-all",
-      selected.size > 0 && !active && "opacity-50"
+      selected.size > 0 && !active && "saturate-50"
     );
 
   return (

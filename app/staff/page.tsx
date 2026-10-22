@@ -1,9 +1,10 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Lock, Eye, LogOut, Megaphone, Plus, Wand2, Settings, UserPlus, UserCog } from "lucide-react";
+import { ChevronRight, Lock, Eye, LogOut, Megaphone, Plus, Wand2, Settings, UserPlus } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession, clearSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
@@ -21,6 +22,8 @@ import TaskDetailSheet from "@/components/TaskDetailSheet";
 import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import HeaderMenu from "@/components/HeaderMenu";
+import StandInList from "@/components/StandInList";
 import SettingsSheet from "@/components/SettingsSheet";
 import AppBackground from "@/components/AppBackground";
 import AITriageSheet from "@/components/AITriageSheet";
@@ -29,11 +32,12 @@ import ProductivityWrapped from "@/components/ProductivityWrapped";
 const UNDO_WINDOW_MS = 6000;
 
 function StaffDashboardInner() {
+  useDocumentTitle("המשימות שלי");
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("user") ?? "noam";
 
-  const { tasks: allTasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment, categories, getTaskCategory } = useTaskStore();
+  const { tasks: allTasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment, categories, getTaskCategory, orgUnits } = useTaskStore();
   const member = team.find((m) => m.id === userId) ?? team[1] ?? team[0];
   const { openWhatsNew } = useWhatsNew();
 
@@ -75,9 +79,14 @@ function StaffDashboardInner() {
 
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<Set<Priority>>(new Set());
-  // Categories are personal to whoever is logged in — a manager viewing this page sees her own categories, not the soldier's.
+  // Whoever is logged in — used for anything the VIEWER does (creating tasks, undo, the task sheet).
   const viewerId = session?.userId ?? userId;
-  const myCategories = useMemo(() => categories.filter((c) => c.userId === viewerId), [categories, viewerId]);
+  // Categories are personal, and this page shows the page owner's tasks — so it is divided by the
+  // PAGE OWNER's categories and their own categorization of each task. Opening someone else's
+  // profile (manager or stand-in) shows how they organized their work; going back to your own
+  // screen shows yours. (Read-only for the viewer: the filter and card badges just display it.)
+  const categoryOwnerId = userId;
+  const myCategories = useMemo(() => categories.filter((c) => c.userId === categoryOwnerId), [categories, categoryOwnerId]);
   const [categoryFilter, setCategoryFilter] = useCategoryFilter(myCategories);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   // Looked up live from `tasks` (not snapshotted at click-time) so the open sheet
@@ -99,10 +108,10 @@ function StaffDashboardInner() {
       base = base.filter((t) => priorityFilter.has(t.priority));
     }
     if (categoryFilter.size > 0) {
-      base = base.filter((t) => matchesCategoryFilter(categoryFilter, getTaskCategory(t.id, viewerId)?.id));
+      base = base.filter((t) => matchesCategoryFilter(categoryFilter, getTaskCategory(t.id, categoryOwnerId)?.id));
     }
     return base;
-  }, [tasks, query, priorityFilter, categoryFilter, getTaskCategory, viewerId]);
+  }, [tasks, query, priorityFilter, categoryFilter, getTaskCategory, categoryOwnerId]);
 
   if (loading || !member) return <LoadingScreen />;
 
@@ -142,9 +151,9 @@ function StaffDashboardInner() {
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.92)] dark:[--bg-scrim:rgba(24,24,27,0.92)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <AppBackground member={member} />
-      <header className="mb-3 flex items-center justify-between">
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title={member.name} subtitle={viewingAsManager ? "צופה/ת במשימות של" : "שלום,"} />
         {backHref ? (
           <a
@@ -155,32 +164,10 @@ function StaffDashboardInner() {
             <ChevronRight size={18} className="text-ink-soft" />
           </a>
         ) : (
+          // At most 3 fixed-size buttons here (bell, back-to-command-board for managers, ⋮) so the
+          // title always keeps room on 320–375px phones; everything else lives in the ⋮ menu.
           <div className="flex shrink-0 items-center gap-2">
             <NotificationBell userId={member.id} />
-            <button
-              onClick={openWhatsNew}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-              aria-label="מה חדש"
-              title="מה חדש"
-            >
-              <Megaphone size={16} className="text-ink-soft" />
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-              aria-label="הגדרות"
-              title="הגדרות"
-            >
-              <Settings size={16} className="text-ink-soft" />
-            </button>
-            <button
-              onClick={() => setTriageOpen(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
-              aria-label="טריאז׳ חכם"
-              title="טריאז׳ חכם"
-            >
-              <Wand2 size={16} />
-            </button>
             {(member.isManager || member.isSuperAdmin) && (
               <a
                 href="/manager"
@@ -191,23 +178,17 @@ function StaffDashboardInner() {
                 <ChevronRight size={18} className="text-ink-soft" />
               </a>
             )}
-            {!member.isManager && !member.isSuperAdmin && member.canAddMembers && (
-              <a
-                href="/manager/team"
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-                aria-label="הוספת איש/אשת צוות"
-                title="הוספת איש/אשת צוות"
-              >
-                <UserPlus size={16} className="text-ink-soft" />
-              </a>
-            )}
-            <button
-              onClick={handleLogout}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-              aria-label="התנתקות"
-            >
-              <LogOut size={16} className="text-ink-soft" />
-            </button>
+            <HeaderMenu
+              items={[
+                { key: "whats-new", label: "מה חדש", icon: Megaphone, onClick: openWhatsNew },
+                { key: "settings", label: "הגדרות", icon: Settings, onClick: () => setSettingsOpen(true) },
+                { key: "triage", label: "טריאז׳ חכם", icon: Wand2, tone: "accent", onClick: () => setTriageOpen(true) },
+                ...(!member.isManager && !member.isSuperAdmin && member.canAddMembers
+                  ? [{ key: "add-member", label: "הוספת איש/אשת צוות", icon: UserPlus, href: "/manager/team" }]
+                  : []),
+                { key: "logout", label: "התנתקות", icon: LogOut, tone: "danger" as const, onClick: handleLogout },
+              ]}
+            />
           </div>
         )}
       </header>
@@ -236,35 +217,13 @@ function StaffDashboardInner() {
           their own Settings — shown only on your own page, not while already viewing someone
           else's. Without this list there'd be no way to actually reach a proxy target's page
           short of typing its URL by hand. */}
-      {!viewingAsManager &&
-        assignableTeam.filter((m) => m.id !== member.id).length > 0 &&
-        (() => {
-          const proxyTargets = assignableTeam.filter((m) => m.id !== member.id);
-          return (
-            <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink dark:text-ink-dark">
-                <UserCog size={13} className="text-ink-soft dark:text-ink-dark-soft" />
-                ממלא/ת מקום עבור
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {proxyTargets.map((m) => (
-                  <a
-                    key={m.id}
-                    href={`/staff?user=${m.id}`}
-                    className="flex items-center gap-1.5 rounded-full bg-zinc-50 dark:bg-zinc-800/60 py-1.5 pr-1.5 pl-3 text-xs font-semibold text-ink dark:text-ink-dark transition-transform active:scale-95"
-                  >
-                    <span
-                      className={`flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br text-[10px] font-bold text-white ${m.colorFrom} ${m.colorTo}`}
-                    >
-                      {m.initials}
-                    </span>
-                    {m.name}
-                  </a>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
+      {!viewingAsManager && assignableTeam.some((m) => m.id !== member.id) && (
+        <StandInList
+          targets={assignableTeam.filter((m) => m.id !== member.id)}
+          ownBrigade={member.brigade}
+          unitOrder={orgUnits.map((u) => u.key)}
+        />
+      )}
 
       <div className="mb-3">
         <SearchBar value={query} onChange={setQuery} placeholder="חיפוש במשימות שלי..." />
@@ -300,7 +259,7 @@ function StaffDashboardInner() {
               <TaskCard
                 task={task}
                 creatorName={task.createdBy ? team.find((m) => m.id === task.createdBy)?.name : undefined}
-                category={getTaskCategory(task.id, viewerId)}
+                category={getTaskCategory(task.id, categoryOwnerId)}
                 onComplete={handleComplete}
                 onOpenDetail={(t) => setDetailTaskId(t.id)}
               />
@@ -319,7 +278,7 @@ function StaffDashboardInner() {
       {canCreateOwnTask && (
         <button
           onClick={() => setSheetOpen(true)}
-          className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+          className="bottom-above-nav fixed inset-x-0 z-30 mx-auto flex w-max items-center gap-2 whitespace-nowrap rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
         >
           <Plus size={20} strokeWidth={2.5} />
           משימה חדשה

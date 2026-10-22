@@ -14,7 +14,7 @@ export default function StepProgress({ steps, compact }: { steps?: TaskStep[]; c
     return (
       <span
         className={`flex shrink-0 items-center gap-0.5 text-[11px] font-medium ${
-          allDone ? "text-emerald-600 dark:text-emerald-400" : "text-ink-soft dark:text-ink-dark-soft"
+          allDone ? "text-emerald-700 dark:text-emerald-400" : "text-ink-soft dark:text-ink-dark-soft"
         }`}
       >
         <ListChecks size={12} />
@@ -30,7 +30,7 @@ export default function StepProgress({ steps, compact }: { steps?: TaskStep[]; c
         <span className="min-w-0 truncate text-ink-soft dark:text-ink-dark-soft">
           {allDone ? "כל השלבים הושלמו" : <>שלב נוכחי: <span className="font-semibold text-ink dark:text-ink-dark">{current?.title}</span></>}
         </span>
-        <span className={`shrink-0 font-bold ${allDone ? "text-emerald-600 dark:text-emerald-400" : "text-ink-soft dark:text-ink-dark-soft"}`}>
+        <span className={`shrink-0 font-bold ${allDone ? "text-emerald-700 dark:text-emerald-400" : "text-ink-soft dark:text-ink-dark-soft"}`}>
           {done}/{total} שלבים
         </span>
       </div>

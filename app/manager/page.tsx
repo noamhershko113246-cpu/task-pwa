@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -25,6 +26,7 @@ import { CategoryFilter, matchesCategoryFilter, useCategoryFilter } from "@/comp
 import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
+import HeaderMenu from "@/components/HeaderMenu";
 import SettingsSheet from "@/components/SettingsSheet";
 import AppBackground from "@/components/AppBackground";
 import AITriageSheet from "@/components/AITriageSheet";
@@ -32,6 +34,7 @@ import ProductivityWrapped from "@/components/ProductivityWrapped";
 import clsx from "clsx";
 
 function ManagerDashboardInner() {
+  useDocumentTitle("לוח פיקוד");
   const router = useRouter();
   const { tasks, activity, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment, categories, getTaskCategory } = useTaskStore();
   const { openWhatsNew } = useWhatsNew();
@@ -135,66 +138,27 @@ function ManagerDashboardInner() {
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.92)] dark:[--bg-scrim:rgba(24,24,27,0.92)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <AppBackground member={me} />
-      {/* Two rows, not one: with 5 action icons this row genuinely doesn't fit next to the
-          title on a ~360px-wide phone (the common Android width) — cramming both into one
-          flex row just forced the title down to 1-2 illegible truncated characters instead.
-          Stacking guarantees the title stays fully readable and every icon stays full-size,
-          on any screen width, at the cost of a bit of extra header height. */}
-      <header className="mb-3 space-y-2">
+      {/* One row: title + bell + ⋮. This header used to hold 5–7 separate 44px icon buttons (and a
+          two-row workaround for them), which still overflowed the screen on ≤375px phones for the
+          super-admin. All secondary actions now live in the ⋮ menu, so the row fits at any width. */}
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title="לוח פיקוד" subtitle={`שלום ${me.name},`} />
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <NotificationBell userId={me.id} />
-          <button
-            onClick={openWhatsNew}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-            aria-label="מה חדש"
-            title="מה חדש"
-          >
-            <Megaphone size={16} className="text-ink-soft" />
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-            aria-label="הגדרות"
-            title="הגדרות"
-          >
-            <Settings size={16} className="text-ink-soft" />
-          </button>
-          <button
-            onClick={() => setTriageOpen(true)}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-600 text-white shadow-soft"
-            aria-label="טריאז׳ חכם"
-            title="טריאז׳ חכם"
-          >
-            <Wand2 size={16} />
-          </button>
-          <Link
-            href="/manager/team"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-            aria-label="ניהול משרד"
-            title="ניהול משרד"
-          >
-            <Users size={16} className="text-ink-soft" />
-          </Link>
-          {me.isSuperAdmin && (
-            <Link
-              href="/manager/org-chart"
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-              aria-label="עץ מבנה ארגוני"
-              title="עץ מבנה ארגוני"
-            >
-              <Network size={16} className="text-ink-soft" />
-            </Link>
-          )}
-          <button
-            onClick={handleLogout}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
-            aria-label="התנתקות"
-          >
-            <LogOut size={16} className="text-ink-soft" />
-          </button>
+          <HeaderMenu
+            items={[
+              { key: "whats-new", label: "מה חדש", icon: Megaphone, onClick: openWhatsNew },
+              { key: "settings", label: "הגדרות", icon: Settings, onClick: () => setSettingsOpen(true) },
+              { key: "triage", label: "טריאז׳ חכם", icon: Wand2, tone: "accent", onClick: () => setTriageOpen(true) },
+              { key: "team", label: "ניהול משרד", icon: Users, href: "/manager/team" },
+              ...(me.isSuperAdmin
+                ? [{ key: "org-chart", label: "עץ מבנה ארגוני", icon: Network, href: "/manager/org-chart" }]
+                : []),
+              { key: "logout", label: "התנתקות", icon: LogOut, tone: "danger" as const, onClick: handleLogout },
+            ]}
+          />
         </div>
       </header>
 
@@ -362,7 +326,7 @@ function ManagerDashboardInner() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-ink dark:text-ink-dark">{task.title}</p>
-                        <p className="text-xs text-rose-500 dark:text-rose-300">
+                        <p className="text-xs text-rose-700 dark:text-rose-300">
                           דדליין היה ב-{formatDeadline(task.deadline)}
                         </p>
                       </div>
@@ -387,10 +351,13 @@ function ManagerDashboardInner() {
           (see /manager/calendar's own "+" per day) doesn't require scrolling back up to the
           "לוח שנה" card every time. DOM order matters here: this pill renders first so it sits
           on the right in RTL, with the round calendar button after it, to its left. */}
-      <div className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3">
+      {/* inset-x-0 + mx-auto + w-max centers it against the full screen width. The old
+          `left-1/2 -translate-x-1/2` capped its width at HALF the screen (the shrink-to-fit
+          width of a left-offset fixed box), so on phones the pill's label wrapped onto two lines. */}
+      <div className="bottom-above-nav fixed inset-x-0 z-30 mx-auto flex w-max max-w-[calc(100%-2rem)] flex-wrap items-center justify-center gap-3">
         <button
           onClick={() => setSheetOpen(true)}
-          className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+          className="flex items-center gap-2 whitespace-nowrap rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
         >
           <Plus size={20} strokeWidth={2.5} />
           משימה חדשה

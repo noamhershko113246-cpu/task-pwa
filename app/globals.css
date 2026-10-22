@@ -4,6 +4,10 @@
 
 html {
   direction: rtl;
+  /* iOS otherwise re-scales text on rotation; also set on html so overflow can't leak past body. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -12,6 +16,40 @@ body {
   overscroll-behavior-y: contain;
   overflow-x: hidden;
   min-height: 100dvh;
+  /* With viewport-fit=cover (layout.tsx) the page extends under the notch in landscape —
+     keep content clear of it. Both are 0 in portrait, so this is a no-op there. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* iOS Safari zooms the whole page when a focused text field is under 16px, which leaves the
+   screen stuck zoomed in with the right edge "cut off" after typing. Fields across the app use
+   text-sm/text-xs for compactness, so this is forced (!important beats the utility classes) on
+   phone widths only — one rule instead of touching every input. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Shared safe-area spacing so every sheet / floating control uses the same values instead of
+   repeating env() strings. */
+@layer utilities {
+  /* Bottom padding for bottom sheets: 2rem normally, more when the home indicator needs it. */
+  .pb-sheet {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+  /* Floating controls that sit above the BottomNav (which itself grows by the safe-area inset). */
+  /* White text on the colourful member gradients: a dark wash keeps it at >= 4.5:1 contrast. */
+  .bg-gradient-avatar {
+    background-image: linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0.45)),
+      linear-gradient(to bottom right, var(--tw-gradient-stops));
+  }
+  .bottom-above-nav {
+    bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
 }
 
 /* On mobile the "app" IS the whole screen, so it uses the same background as body.

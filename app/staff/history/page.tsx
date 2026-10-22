@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +17,7 @@ import TaskDetailSheet from "@/components/TaskDetailSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 
 function StaffHistoryInner() {
+  useDocumentTitle("היסטוריית משימות");
   const searchParams = useSearchParams();
   const userId = searchParams.get("user") ?? "noam";
   const { tasks: allTasks, team, loading, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
@@ -37,7 +39,7 @@ function StaffHistoryInner() {
 
   return (
     <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
-      <header className="mb-5 flex items-center justify-between">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title="היסטוריית משימות" subtitle={member.name} />
         <Link
           href={`/staff?user=${userId}`}

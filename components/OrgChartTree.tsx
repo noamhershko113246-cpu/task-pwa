@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { dndAnnouncements, dndScreenReaderInstructions } from "@/lib/dndA11y";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   useDraggable,
@@ -13,13 +15,17 @@ import {
   DragStartEvent,
   DragEndEvent,
 } from "@dnd-kit/core";
-import { ChevronDown, Plus, UserX, Crown } from "lucide-react";
+import { ChevronDown, Plus, UserX, Crown, GripVertical } from "lucide-react";
 import clsx from "clsx";
 import { DEFAULT_DEPARTMENT, TeamMember } from "@/lib/types";
 import { OrgUnit, getDepartmentsForUnit } from "@/lib/orgStructure";
 import { buildDeptForest, dropIneligibilityReason, OrgTreeNode } from "@/lib/buildOrgTree";
 import { useToast } from "./ToastProvider";
 import Avatar from "./Avatar";
+
+// Id of whoever is looking at the chart, so their own card can be marked and scrolled into view —
+// in a long multi-unit tree it's otherwise easy to miss where you ended up.
+const CurrentUserContext = createContext<string | null>(null);
 
 function PersonNode({
   node,
@@ -39,6 +45,7 @@ function PersonNode({
     activeMember && dropIneligibilityReason(activeMember, member, team) === null
   );
   const isCommander = Boolean(member.isManager || member.isSuperManager);
+  const isMe = useContext(CurrentUserContext) === member.id;
 
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(member.title ?? "");
@@ -74,8 +81,14 @@ function PersonNode({
     <div>
       <div
         ref={setNodeRef}
+        id={isMe ? "org-chart-me" : undefined}
         {...(dragDisabled ? {} : draggable.listeners)}
         {...(dragDisabled ? {} : draggable.attributes)}
+        onKeyDown={(e) => {
+          if (dragDisabled) return;
+          draggable.listeners?.onKeyDown?.(e);
+          if (e.key === "Enter" && e.target === e.currentTarget && !draggable.isDragging) startEdit();
+        }}
         onClick={startEdit}
         style={
           draggable.transform
@@ -83,18 +96,26 @@ function PersonNode({
             : undefined
         }
         className={clsx(
-          "mb-2 flex touch-none select-none items-center gap-2.5 rounded-2xl border p-2.5 transition-colors",
+          "mb-2 flex select-none items-center gap-2 rounded-2xl border p-2.5 transition-colors",
+          isMe && "ring-2 ring-brand-400",
+          !dragDisabled && "cursor-grab active:cursor-grabbing",
           draggable.isDragging && "opacity-40",
           droppable.isOver && isValidDropTarget && "border-brand-400 bg-brand-50/60 dark:bg-brand-500/10",
           !droppable.isOver && isValidDropTarget && "border-brand-200/70 dark:border-brand-500/30",
           !activeMember && "border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card",
-          activeMember && !isValidDropTarget && !isDragged && "border-zinc-100 dark:border-zinc-800 bg-white/50 opacity-40 dark:bg-surface-dark-card/50",
-          !dragDisabled && "cursor-grab active:cursor-grabbing"
+          activeMember && !isValidDropTarget && !isDragged && "border-zinc-100 dark:border-zinc-800 bg-white/50 opacity-40 dark:bg-surface-dark-card/50"
         )}
       >
         <Avatar member={member} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-ink dark:text-ink-dark">{member.name}</p>
+          <p className="flex items-center gap-1.5 text-sm font-bold text-ink dark:text-ink-dark">
+            <span className="truncate">{member.name}</span>
+            {isMe && (
+              <span className="shrink-0 rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+                אתה
+              </span>
+            )}
+          </p>
           {member.title && (
             <p className="truncate text-xs text-ink-soft dark:text-ink-dark-soft">{member.title}</p>
           )}
@@ -111,6 +132,21 @@ function PersonNode({
             ללא שיוך
           </span>
         )}
+        {/* The row itself is no longer `touch-none` — that made every row a dead zone for scrolling
+            on a phone (you couldn't swipe the page with a finger on a person). A mouse still drags
+            from anywhere on the row; on touch, press-and-hold the row or grab this grip, which is
+            the only part that blocks scrolling. */}
+        {!dragDisabled && (
+          <span
+            ref={draggable.setActivatorNodeRef}
+            {...draggable.listeners}
+            onClick={(e) => e.stopPropagation()}
+            aria-hidden="true"
+            className="flex h-9 w-8 shrink-0 touch-none items-center justify-center rounded-lg text-zinc-500 dark:text-zinc-400"
+          >
+            <GripVertical size={16} />
+          </span>
+        )}
       </div>
 
       {editing && (
@@ -124,26 +160,27 @@ function PersonNode({
             onChange={(e) => setTitleDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && save()}
             placeholder="תפקיד (למשל: ק. כא סדיר)"
+                aria-label="תפקיד (למשל: ק. כא סדיר)"
             className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
           />
           {!member.isSuperManager && (
-            <label className="flex items-center gap-2 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+            <label className="flex min-h-11 items-center gap-2 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
               <input
                 type="checkbox"
                 checked={commanderDraft}
                 onChange={(e) => setCommanderDraft(e.target.checked)}
-                className="h-4 w-4 rounded accent-brand-600"
+                className="h-5 w-5 shrink-0 rounded accent-brand-600"
               />
               מפקד/ת — יכול/ה להיות מפקד/ת של אנשים או מפקדים אחרים
             </label>
           )}
           <div className="flex gap-2">
-            <button onClick={save} className="flex-1 rounded-xl bg-brand-600 py-2 text-xs font-bold text-white">
+            <button onClick={save} className="min-h-11 flex-1 rounded-xl bg-brand-600 py-2 text-sm font-bold text-white">
               שמירה
             </button>
             <button
               onClick={() => setEditing(false)}
-              className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2 text-xs font-bold text-ink-soft dark:text-ink-dark-soft"
+              className="min-h-11 flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2 text-sm font-bold text-ink-soft dark:text-ink-dark-soft"
             >
               ביטול
             </button>
@@ -155,7 +192,7 @@ function PersonNode({
           reads unambiguously even when several people share similar names/positions — relying
           on indentation-only depth was too subtle to tell "reports to" apart at a glance. */}
       {children.length > 0 && (
-        <div className="mb-1 me-[13px] border-e-2 border-zinc-200 dark:border-zinc-700 pe-4">
+        <div className="mb-1 me-2.5 border-e-2 border-zinc-200 dark:border-zinc-700 pe-2">
           {children.map((child) => (
             <PersonNode key={child.member.id} node={child} team={team} activeMember={activeMember} onUpdateMember={onUpdateMember} />
           ))}
@@ -200,6 +237,7 @@ function AddDepartmentCard({ unitKey, onAdd }: { unitKey: string; onAdd: (unitKe
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder="שם המדור החדש"
+                aria-label="שם המדור החדש"
         className="min-w-0 flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none"
       />
       <button onClick={submit} className="shrink-0 rounded-xl bg-brand-600 px-3 py-2 text-xs font-bold text-white">
@@ -250,6 +288,7 @@ function AddUnitCard({ onAdd }: { onAdd: (key: string, label: string) => void })
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder="שם היחידה החדשה"
+                aria-label="שם היחידה החדשה"
         className="min-w-0 flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2.5 text-sm text-ink dark:text-ink-dark outline-none"
       />
       <button onClick={submit} className="shrink-0 rounded-2xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white">
@@ -316,9 +355,11 @@ export default function OrgChartTree({
   onCreateUnit,
   onCreateDepartment,
   onUpdateMember,
+  currentUserId,
 }: {
   team: TeamMember[];
   orgUnits: OrgUnit[];
+  currentUserId?: string;
   onReassignManager: (memberId: string, newManagerId: string) => void;
   onCreateUnit: (key: string, label: string) => void;
   onCreateDepartment: (unitKey: string, name: string) => void;
@@ -326,9 +367,20 @@ export default function OrgChartTree({
 }) {
   const { showToast } = useToast();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const scrolledToMe = useRef(false);
+  useEffect(() => {
+    if (scrolledToMe.current || !currentUserId) return;
+    const el = document.getElementById("org-chart-me");
+    if (!el) return;
+    scrolledToMe.current = true;
+    el.scrollIntoView({ block: "center" });
+  }, [currentUserId, team, orgUnits]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    // Keyboard: Space picks a card/person up, arrows move it, Space drops, Esc cancels.
+    // Enter is left free to open the item (see onKeyDown on the draggable).
+    useSensor(KeyboardSensor, { keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] } })
   );
 
   const activeMember = activeId ? team.find((m) => m.id === activeId) ?? null : null;
@@ -360,7 +412,13 @@ export default function OrgChartTree({
   };
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <CurrentUserContext.Provider value={currentUserId ?? null}>
+    <DndContext
+      sensors={sensors}
+      accessibility={{ announcements: dndAnnouncements, screenReaderInstructions: dndScreenReaderInstructions }}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <div>
         {orgUnits.map((unit) => {
           const departments = getDepartmentsForUnit(orgUnits, unit.key);
@@ -395,5 +453,6 @@ export default function OrgChartTree({
         )}
       </DragOverlay>
     </DndContext>
+    </CurrentUserContext.Provider>
   );
 }

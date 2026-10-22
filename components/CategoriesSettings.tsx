@@ -112,7 +112,10 @@ export default function CategoriesSettings({ userId }: { userId: string }) {
                       onChange={(e) => setEditName(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") commitRename(c);
-                        if (e.key === "Escape") setEditingId(null);
+                        if (e.key === "Escape") {
+                          e.preventDefault(); // cancels this edit only — not the sheet it sits in
+                          setEditingId(null);
+                        }
                       }}
                       className="min-w-0 flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-2 py-1 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
                     />
@@ -216,6 +219,7 @@ export default function CategoriesSettings({ userId }: { userId: string }) {
               }}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               placeholder="קטגוריה חדשה, למשל: אישי"
+                aria-label="קטגוריה חדשה, למשל: אישי"
               className="min-w-0 flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
             />
             <button
@@ -233,7 +237,7 @@ export default function CategoriesSettings({ userId }: { userId: string }) {
         <p className="text-[11px] text-ink-soft dark:text-ink-dark-soft">הגעת למקסימום של {MAX_CATEGORIES} קטגוריות.</p>
       )}
 
-      {error && <p className="mt-2 text-xs font-medium text-rose-500">{error}</p>}
+      {error && <p className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-400">{error}</p>}
     </section>
   );
 }

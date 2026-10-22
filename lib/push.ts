@@ -15,6 +15,23 @@ export function pushSupported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
 }
 
+/** Why pushSupported() is false on this device, as a user-facing Hebrew sentence. Browsers only
+ *  expose service workers on HTTPS (or localhost), and iPhones additionally only allow push for an
+ *  app that was added to the home screen — so "unsupported" is usually fixable by the user. */
+export function pushUnsupportedReason(): string {
+  if (typeof window === "undefined") return "";
+  if (!window.isSecureContext) return "התראות עובדות רק בחיבור מאובטח (HTTPS) — לא בכתובת הזו";
+  const isIOS =
+    /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone =
+    (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches;
+  if (isIOS && !standalone) {
+    return "באייפון צריך קודם להוסיף את האפליקציה למסך הבית (שיתוף ← הוספה למסך הבית) כדי לקבל התראות";
+  }
+  return "הדפדפן הזה לא תומך בהתראות";
+}
+
 export async function getNotificationPermission(): Promise<NotificationPermission | null> {
   if (typeof window === "undefined" || !("Notification" in window)) return null;
   return Notification.permission;

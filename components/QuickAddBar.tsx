@@ -26,7 +26,7 @@ export default function QuickAddBar({
         focused ? "border-brand-400" : "border-zinc-100 dark:border-zinc-800"
       }`}
     >
-      <Plus size={18} className="shrink-0 text-zinc-400" />
+      <Plus size={18} className="shrink-0 text-zinc-500 dark:text-zinc-400" />
       <input
         id="quick-add-input"
         value={value}
@@ -35,7 +35,7 @@ export default function QuickAddBar({
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
         placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent text-sm text-ink dark:text-ink-dark placeholder:text-zinc-400 outline-none"
+        className="min-w-0 flex-1 bg-transparent text-sm text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 outline-none"
       />
       {value.trim() && (
         <button

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useId } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
-import { X, Repeat, Plus, ChevronUp, ChevronDown } from "lucide-react";
+import { X, Repeat, Plus, ChevronUp, ChevronDown, User } from "lucide-react";
+import { useDialog } from "@/lib/useDialog";
 import { TeamMember, Task, Priority, PRIORITY_COLORS, MAX_STEPS, MAX_STEP_LENGTH } from "@/lib/types";
 import { generateRecurringDates, WEEKDAY_LETTERS, firstName } from "@/lib/utils";
 import { useTaskStore } from "@/lib/store";
+import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { CategoryPicker } from "./CategoryChips";
 import clsx from "clsx";
 
@@ -31,6 +33,7 @@ export default function CreateTaskSheet({
    *  day (09:00) instead of leaving it empty. The date/time stays fully editable either way. */
   initialDate?: string;
 }) {
+  const keyboard = useKeyboardInset(open);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<Set<string>>(new Set());
@@ -68,6 +71,11 @@ export default function CreateTaskSheet({
   }, [open, initialDate]);
 
   const assignable = team;
+  // "לעצמי בלבד": one tap to assign only to whoever is creating the task (instead of hunting for
+  // your own first name among everyone). Hidden when the creator isn't a pickable assignee here,
+  // e.g. when a manager opens a task sheet from someone else's page.
+  const myMember = currentUserId ? assignable.find((m) => m.id === currentUserId) : undefined;
+  const onlyMe = !!myMember && assigneeIds.size === 1 && assigneeIds.has(myMember.id);
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => {
@@ -110,6 +118,8 @@ export default function CreateTaskSheet({
     reset();
     onClose();
   };
+  const dialogRef = useDialog<HTMLDivElement>(open, handleClose);
+  const titleId = useId();
 
   const handleSubmit = () => {
     if (!title.trim() || assigneeIds.size === 0) return;
@@ -161,7 +171,12 @@ export default function CreateTaskSheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
-            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[88vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            style={keyboard ? { bottom: keyboard, maxHeight: `calc(88dvh - ${keyboard}px)` } : undefined}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}
@@ -171,7 +186,7 @@ export default function CreateTaskSheet({
             </div>
 
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-extrabold text-ink dark:text-ink-dark">משימה חדשה</h2>
+              <h2 id={titleId} className="text-lg font-extrabold text-ink dark:text-ink-dark">משימה חדשה</h2>
               <button
                 onClick={handleClose}
                 aria-label="סגירה"
@@ -183,27 +198,27 @@ export default function CreateTaskSheet({
 
             <div className="space-y-5">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
+                <label htmlFor="ct-f1" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
                   שם המשימה
                 </label>
-                <input
+                <input id="ct-f1"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="למשל: עדכון דו״ח שבועי"
-                  className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+                  className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
+                <label htmlFor="ct-f2" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
                   תיאור
                 </label>
-                <textarea
+                <textarea id="ct-f2"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                   placeholder="פרטים נוספים על המשימה..."
-                  className="w-full resize-none rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
+                  className="w-full resize-none rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 focus:bg-white dark:focus:bg-zinc-800 outline-none transition-colors"
                 />
               </div>
 
@@ -211,18 +226,34 @@ export default function CreateTaskSheet({
                 <label className="mb-2 block text-sm font-semibold text-ink dark:text-ink-dark">
                   שיוך מהיר — אפשר לבחור כמה אנשים
                 </label>
+                {myMember && (
+                  <button
+                    type="button"
+                    onClick={() => setAssigneeIds(onlyMe ? new Set() : new Set([myMember.id]))}
+                    aria-pressed={onlyMe}
+                    className={clsx(
+                      "mb-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-colors",
+                      onlyMe
+                        ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"
+                        : "border-zinc-200 dark:border-zinc-700 text-ink dark:text-ink-dark"
+                    )}
+                  >
+                    <User size={16} />
+                    לעצמי בלבד
+                  </button>
+                )}
                 <div className="flex flex-wrap gap-3">
                   {assignable.map((m) => (
                     <button
                       key={m.id}
                       onClick={() => toggleAssignee(m.id)}
                       className={clsx(
-                        "flex h-12 min-w-[3.5rem] items-center justify-center rounded-full bg-gradient-to-br px-3.5 font-bold text-white text-sm transition-all active:scale-90",
+                        "flex h-12 min-w-[3.5rem] items-center justify-center rounded-full bg-gradient-avatar px-3.5 font-bold text-white text-sm transition-all active:scale-90",
                         m.colorFrom,
                         m.colorTo,
                         assigneeIds.has(m.id)
                           ? "ring-4 ring-offset-2 ring-brand-400 dark:ring-offset-surface-dark-card scale-105"
-                          : "opacity-60 hover:opacity-100"
+                          : "saturate-50 hover:saturate-100"
                       )}
                       aria-pressed={assigneeIds.has(m.id)}
                     >
@@ -240,11 +271,12 @@ export default function CreateTaskSheet({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
+                <label htmlFor="ct-deadline" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
                   {isRecurring ? "מתחיל בתאריך ושעה" : "דדליין (תאריך ושעה) — לא חובה"}
                 </label>
                 <div className="relative">
                   <input
+                    id="ct-deadline"
                     type="datetime-local"
                     value={deadline}
                     onChange={(e) => setDeadline(e.target.value)}
@@ -262,7 +294,7 @@ export default function CreateTaskSheet({
                       type="button"
                       onClick={() => setDeadline("")}
                       aria-label="הסרת דדליין"
-                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     >
                       <X size={16} />
                     </button>
@@ -288,7 +320,7 @@ export default function CreateTaskSheet({
                         onClick={() => setPriority(p)}
                         className={clsx(
                           "flex-1 rounded-xl py-2.5 text-center text-xs font-bold transition-all active:scale-95",
-                          priority === p ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "opacity-70"
+                          priority === p ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "saturate-50"
                         )}
                         style={{ backgroundColor: c.bg, color: c.fg }}
                       >
@@ -351,6 +383,7 @@ export default function CreateTaskSheet({
                         }
                       }}
                       placeholder={steps.length === 0 ? "שלב ראשון..." : `שלב ${steps.length + 1}...`}
+                      aria-label="הוספת שלב למשימה"
                       className="min-w-0 flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 px-4 py-2.5 text-sm text-ink dark:text-ink-dark outline-none focus:border-brand-500"
                     />
                     <button
@@ -428,7 +461,7 @@ export default function CreateTaskSheet({
                                 onClick={() => toggleDay(day)}
                                 aria-pressed={selectedDays.has(day)}
                                 className={clsx(
-                                  "flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all active:scale-90",
+                                  "flex aspect-square max-w-10 flex-1 items-center justify-center rounded-full text-sm font-bold transition-all active:scale-90",
                                   selectedDays.has(day)
                                     ? "bg-brand-600 text-white"
                                     : "bg-white dark:bg-zinc-700 text-ink-soft dark:text-ink-dark-soft border border-zinc-200 dark:border-zinc-600"
@@ -441,10 +474,10 @@ export default function CreateTaskSheet({
                         </div>
 
                         <div>
-                          <label className="mb-1.5 block text-xs font-semibold text-ink-soft dark:text-ink-dark-soft">
+                          <label htmlFor="ct-f3" className="mb-1.5 block text-xs font-semibold text-ink-soft dark:text-ink-dark-soft">
                             חוזר עד תאריך
                           </label>
-                          <input
+                          <input id="ct-f3"
                             type="date"
                             value={recurrenceEnd}
                             min={deadline ? deadline.slice(0, 10) : undefined}

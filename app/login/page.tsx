@@ -1,20 +1,28 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { User, ArrowRight, Check } from "lucide-react";
+import { User, ArrowRight, Check, Lock } from "lucide-react";
 import { useTaskStore } from "@/lib/store";
+import type { TeamMember } from "@/lib/types";
 import { setSession } from "@/lib/auth";
 import LoadingScreen from "@/components/LoadingScreen";
 
 export default function LoginPage() {
+  useDocumentTitle("התחברות");
   const router = useRouter();
   const { team, loading } = useTaskStore();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
+  // Set once the name matches the super-admin: the screen then asks for that account's password.
+  const [pendingAdmin, setPendingAdmin] = useState<TeamMember | null>(null);
+  const [password, setPassword] = useState("");
+  const [checking, setChecking] = useState(false);
 
   if (loading) return <LoadingScreen />;
 
@@ -31,8 +39,47 @@ export default function LoginPage() {
       return;
     }
 
+    // The super-admin account needs a password on top of the name (checked on the server).
+    if (member.isSuperAdmin) {
+      setPassword("");
+      setPendingAdmin(member);
+      return;
+    }
+
+    finishLogin(member);
+  };
+
+  const finishLogin = (member: TeamMember) => {
     setSession(member.id, rememberMe);
     router.push(member.isManager ? "/manager" : `/staff?user=${member.id}`);
+  };
+
+  const handlePassword = async () => {
+    if (!pendingAdmin || !password || checking) return;
+    setError("");
+    setChecking(true);
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        finishLogin(pendingAdmin);
+        return;
+      }
+      setError(res.status === 429 ? "יותר מדי ניסיונות. נסו שוב בעוד דקה." : "הסיסמה שגויה.");
+    } catch {
+      setError("לא הצלחנו לבדוק את הסיסמה. בדקו את החיבור ונסו שוב.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const backToName = () => {
+    setPendingAdmin(null);
+    setPassword("");
+    setError("");
   };
 
   return (
@@ -61,23 +108,74 @@ export default function LoginPage() {
         transition={{ duration: 0.25 }}
         className="space-y-4"
       >
+        {pendingAdmin ? (
+          <>
+            <div>
+              <label htmlFor="login-password" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">
+                סיסמה עבור {pendingAdmin.name}
+              </label>
+              <div className="relative">
+                <Lock size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400" />
+                <input
+                  id="login-password"
+                  type="password"
+                  autoComplete="current-password"
+                  autoFocus
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "login-error" : undefined}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handlePassword()}
+                  className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card py-3 pr-11 pl-4 text-ink dark:text-ink-dark focus:border-brand-500 outline-none transition-colors"
+                />
+              </div>
+            </div>
+            {error && (
+              <p id="login-error" role="alert" className="text-sm font-medium text-rose-700 dark:text-rose-400">
+                {error}
+              </p>
+            )}
+            <button
+              onClick={handlePassword}
+              disabled={!password || checking}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 py-3.5 font-bold text-white shadow-soft transition-all active:scale-[0.98] disabled:bg-zinc-300 dark:disabled:bg-zinc-700 disabled:cursor-not-allowed"
+            >
+              {checking ? "בודק..." : "כניסה"}
+              <ArrowRight size={18} className="rotate-180" />
+            </button>
+            <button
+              type="button"
+              onClick={backToName}
+              className="w-full text-center text-sm font-medium text-brand-700 underline dark:text-brand-300"
+            >
+              חזרה
+            </button>
+          </>
+        ) : (
+        <>
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם מלא</label>
+          <label htmlFor="login-name" className="mb-1.5 block text-sm font-semibold text-ink dark:text-ink-dark">שם מלא</label>
           <div className="relative">
-            <User size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <User size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400" />
             <input
+              id="login-name"
               type="text"
+              autoComplete="name"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "login-error" : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLogin()}
               placeholder="שם פרטי ושם משפחה"
-              className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card py-3 pr-11 pl-4 text-ink dark:text-ink-dark placeholder:text-zinc-400 focus:border-brand-500 outline-none transition-colors"
+              className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card py-3 pr-11 pl-4 text-ink dark:text-ink-dark placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-brand-500 outline-none transition-colors"
             />
           </div>
         </div>
 
         <button
           type="button"
+          role="checkbox"
+          aria-checked={rememberMe}
           onClick={() => setRememberMe((v) => !v)}
           className="flex w-full items-center gap-2.5 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card px-4 py-3 text-right"
         >
@@ -92,7 +190,11 @@ export default function LoginPage() {
           <span className="text-sm font-medium text-ink dark:text-ink-dark">זכור אותי במכשיר הזה</span>
         </button>
 
-        {error && <p className="text-sm font-medium text-rose-500">{error}</p>}
+        {error && (
+          <p id="login-error" role="alert" className="text-sm font-medium text-rose-700 dark:text-rose-400">
+            {error}
+          </p>
+        )}
 
         <button
           onClick={handleLogin}
@@ -102,6 +204,13 @@ export default function LoginPage() {
           כניסה
           <ArrowRight size={18} className="rotate-180" />
         </button>
+        </>
+        )}
+        <p className="text-center text-sm">
+          <Link href="/accessibility" className="font-medium text-brand-700 underline dark:text-brand-300">
+            הצהרת נגישות
+          </Link>
+        </p>
       </motion.div>
     </main>
   );

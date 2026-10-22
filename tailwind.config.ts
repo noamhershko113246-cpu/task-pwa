@@ -26,7 +26,7 @@ const config: Config = {
         },
         ink: {
           DEFAULT: "#27272a",
-          soft: "#71717a",
+          soft: "#63636b",
           dark: "#f4f4f5",
           "dark-soft": "#a1a1aa",
         },
@@ -45,6 +45,8 @@ const config: Config = {
           green: "#1f5c46",
           "green-light": "#2f7a5f",
           tan: "#c9a06b",
+          "tan-deep": "#7f5b22",
+          "red-light": "#e8a0a0",
           red: "#7a1f1f",
         },
         // pastel status colors

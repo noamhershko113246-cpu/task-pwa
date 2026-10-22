@@ -312,6 +312,12 @@ interface TaskStoreValue {
    * by the UI (TaskStepsChecklist), not here.
    */
   saveTaskSteps: (taskId: string, baseline: StepDraft[], draft: StepDraft[], actorId: string) => void;
+  /**
+   * Checks / unchecks ONE saved step right away (no "save" needed), so progress is never lost when
+   * the task sheet is closed. Applied locally first, then conditionally in the DB. The in-order
+   * lock is enforced by the UI (TaskStepsChecklist), like saveTaskSteps.
+   */
+  setStepDone: (taskId: string, stepId: string, done: boolean, actorId: string) => void;
 }
 
 const TaskStoreContext = createContext<TaskStoreValue | null>(null);
@@ -1120,6 +1126,54 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportIfError, logActivity]);
 
+  const setStepDone: TaskStoreValue["setStepDone"] = useCallback((taskId, stepId, done, actorId) => {
+    (async () => {
+      const now = new Date().toISOString();
+      // Local first — the realtime echo for task_steps can lag or not arrive, and the point of this
+      // action is that the tick shows (and survives closing the sheet) immediately.
+      setStepsByTask((prev) => ({
+        ...prev,
+        [taskId]: (prev[taskId] ?? []).map((s) =>
+          s.id === stepId
+            ? { ...s, isDone: done, doneBy: done ? actorId : undefined, doneAt: done ? now : undefined }
+            : s
+        ),
+      }));
+
+      // Conditional on the row still being in the state the UI saw, so two people finishing the same
+      // step at once don't overwrite each other's "who & when" (same guard as saveTaskSteps).
+      const patch = done
+        ? { is_done: true, done_by: actorId, done_at: now }
+        : { is_done: false, done_by: null, done_at: null };
+      const { data: changed, error } = await supabase
+        .from("task_steps")
+        .update(patch)
+        .eq("id", stepId)
+        .eq("is_done", !done)
+        .select("id");
+
+      // Re-read so local state matches exactly what the DB ended up with (also undoes the optimistic
+      // change if the write failed or someone else got there first).
+      const { data: fresh } = await supabase.from("task_steps").select("*").eq("task_id", taskId).order("sort_order");
+      if (fresh) setStepsByTask((prev) => ({ ...prev, [taskId]: (fresh as StepRow[]).map(stepFromRow) }));
+      if (reportIfError(error, "שמירת השלב")) return;
+      if (!changed || changed.length === 0) return; // already in that state — nothing new to log
+
+      if (done && fresh) {
+        const total = fresh.length;
+        const doneCount = (fresh as StepRow[]).filter((s) => s.is_done).length;
+        const task = rawTasksRef.current.find((t) => t.id === taskId);
+        await logActivity({
+          userId: actorId,
+          taskId,
+          taskTitle: task?.title ?? "",
+          action: doneCount === total ? `השלים/ה את כל השלבים (${total})` : `התקדם/ה בשלבים (${doneCount}/${total})`,
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportIfError, logActivity]);
+
   const sortedCategories = useMemo(
     () => [...categories].sort((a, b) => a.sortOrder - b.sortOrder),
     [categories]
@@ -1163,12 +1217,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       loading, tasks, activity, team, orgUnits, categories: sortedCategories, createTasks, updateTask, deleteTask, addComment,
       addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment,
       addCategory, updateCategory, removeCategory, setTaskCategory, getTaskCategory,
-      saveTaskSteps,
+      saveTaskSteps, setStepDone,
     }),
     [loading, tasks, activity, team, orgUnits, sortedCategories, createTasks, updateTask, deleteTask, addComment,
       addAttachment, removeAttachment, addMember, updateMember, removeMember, addOrgUnit, addOrgDepartment,
       addCategory, updateCategory, removeCategory, setTaskCategory, getTaskCategory,
-      saveTaskSteps]
+      saveTaskSteps, setStepDone]
   );
 
   return <TaskStoreContext.Provider value={value}>{children}</TaskStoreContext.Provider>;

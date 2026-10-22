@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { BellRing, BellOff, AlertTriangle } from "lucide-react";
 import {
   enablePushNotifications,
@@ -8,24 +8,43 @@ import {
   getNotificationPermission,
   isPushSubscribed,
   pushSupported,
+  pushUnsupportedReason,
 } from "@/lib/push";
+import { useToast } from "./ToastProvider";
+import { useDialog } from "@/lib/useDialog";
 
 export default function NotificationBell({ userId }: { userId: string }) {
+  const { showToast } = useToast();
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   // Turning notifications off is exactly the kind of accidental tap (fat-finger on a small
   // header icon) that quietly costs someone a missed task later — confirm before it takes
   // effect, the same way deleting a task or removing a team member already do.
   const [confirmingOff, setConfirmingOff] = useState(false);
+  const dialogRef = useDialog<HTMLDivElement>(confirmingOff, () => setConfirmingOff(false));
+  const titleId = useId();
 
   useEffect(() => {
     getNotificationPermission().then(setPermission);
     isPushSubscribed().then(setSubscribed);
   }, []);
 
-  if (!pushSupported()) return null;
+  // Used to render nothing here, which made the notification option silently vanish on any device
+  // that can't do push (plain-HTTP address, iPhone Safari outside the home-screen app). Keep the
+  // button so people can find it, and say why it can't be used.
+  if (!pushSupported()) {
+    return (
+      <button
+        onClick={() => showToast(pushUnsupportedReason(), "error")}
+        className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+        aria-label="התראות לא זמינות במכשיר הזה"
+        title="התראות לא זמינות במכשיר הזה"
+      >
+        <BellOff size={16} className="text-ink-soft opacity-50" />
+      </button>
+    );
+  }
 
   // "on": actively subscribed. "off": user turned it off (or never turned it on) but could.
   // "blocked": the browser itself denied notification permission — can't be toggled from
@@ -35,23 +54,21 @@ export default function NotificationBell({ userId }: { userId: string }) {
   const handleClick = async () => {
     if (busy) return;
     if (state === "blocked") {
-      setMessage("ההתראות חסומות ברמת הדפדפן/המכשיר — יש לאפשר אותן משם ידנית");
+      showToast("ההתראות חסומות ברמת הדפדפן/המכשיר — יש לאפשר אותן משם ידנית", "error");
       return;
     }
     if (state === "on") {
-      setMessage(null);
       setConfirmingOff(true);
       return;
     }
     setBusy(true);
-    setMessage(null);
     const result = await enablePushNotifications(userId);
     setBusy(false);
     if (result.ok) {
       setPermission("granted");
       setSubscribed(true);
     } else {
-      setMessage(result.reason ?? "לא ניתן היה להפעיל התראות");
+      showToast(result.reason ?? "לא ניתן היה להפעיל התראות", "error");
     }
   };
 
@@ -61,7 +78,7 @@ export default function NotificationBell({ userId }: { userId: string }) {
     const result = await disablePushNotifications(userId);
     setBusy(false);
     if (result.ok) setSubscribed(false);
-    else setMessage(result.reason ?? "לא ניתן היה לכבות את ההתראות");
+    else showToast(result.reason ?? "לא ניתן היה לכבות את ההתראות", "error");
   };
 
   const Icon = state === "on" ? BellRing : BellOff;
@@ -82,33 +99,40 @@ export default function NotificationBell({ userId }: { userId: string }) {
         <Icon size={16} className={iconClass} />
       </button>
 
+      {/* A centered, viewport-clamped dialog — NOT a panel anchored to the bell. The bell sits in
+          the middle of the header's icon row, and an `absolute left-0` panel (physical, doesn't
+          flip in RTL) grew off the right edge of the screen on every phone width, cutting off the
+          confirm button. inset-x-4 + max-w keeps it inside the viewport at any width. */}
       {confirmingOff && (
-        <div className="absolute left-0 top-11 z-10 w-56 rounded-2xl bg-zinc-900 dark:bg-zinc-800 p-3.5 text-white shadow-lg">
-          <p className="mb-2.5 flex items-start gap-1.5 text-[11px] leading-snug">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
-            לכבות התראות? יש סיכוי שתפספס עדכונים על משימות שהוקצו לך או שחורגות מהדדליין.
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={confirmDisable}
-              className="flex-1 rounded-lg bg-rose-600 py-1.5 text-[11px] font-bold active:scale-95 transition-transform"
-            >
-              כן, כבה
-            </button>
-            <button
-              onClick={() => setConfirmingOff(false)}
-              className="flex-1 rounded-lg bg-white/15 py-1.5 text-[11px] font-bold active:scale-95 transition-transform"
-            >
-              ביטול
-            </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmingOff(false)} />
+          <div
+            ref={dialogRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="relative w-full max-w-xs rounded-2xl bg-zinc-900 dark:bg-zinc-800 p-4 text-white shadow-2xl"
+          >
+            <p id={titleId} className="mb-4 flex items-start gap-2 text-sm leading-snug">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" />
+              לכבות התראות? יש סיכוי שתפספס עדכונים על משימות שהוקצו לך או שחורגות מהדדליין.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={confirmDisable}
+                className="min-h-11 flex-1 rounded-xl bg-rose-600 py-2.5 text-sm font-bold active:scale-95 transition-transform"
+              >
+                כן, כבה
+              </button>
+              <button
+                onClick={() => setConfirmingOff(false)}
+                className="min-h-11 flex-1 rounded-xl bg-white/15 py-2.5 text-sm font-bold active:scale-95 transition-transform"
+              >
+                ביטול
+              </button>
+            </div>
           </div>
         </div>
-      )}
-
-      {message && (
-        <p className="absolute left-0 top-11 z-10 w-44 rounded-xl bg-zinc-900 dark:bg-zinc-800 px-3 py-2 text-[11px] text-white shadow-lg">
-          {message}
-        </p>
       )}
     </div>
   );

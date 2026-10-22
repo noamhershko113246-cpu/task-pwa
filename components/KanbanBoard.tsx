@@ -1,11 +1,13 @@
 "use client";
 
+import { dndAnnouncements, dndScreenReaderInstructions } from "@/lib/dndA11y";
 import { useState } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   useDraggable,
@@ -23,11 +25,11 @@ import clsx from "clsx";
 const COLUMNS: TaskStatus[] = ["todo", "in_progress", "stuck", "done"];
 
 const COLUMN_STYLES: Record<TaskStatus, { header: string; dot: string }> = {
-  todo: { header: "text-zinc-500 dark:text-zinc-400", dot: "bg-zinc-400" },
+  todo: { header: "text-zinc-600 dark:text-zinc-400", dot: "bg-zinc-400" },
   in_progress: { header: "text-indigo-600 dark:text-indigo-300", dot: "bg-indigo-500" },
   stuck: { header: "text-rose-600 dark:text-rose-300", dot: "bg-rose-500" },
-  done: { header: "text-emerald-600 dark:text-emerald-300", dot: "bg-emerald-500" },
-  cancelled: { header: "text-zinc-400", dot: "bg-zinc-400" },
+  done: { header: "text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500" },
+  cancelled: { header: "text-zinc-500 dark:text-zinc-400", dot: "bg-zinc-400" },
 };
 
 function KanbanCard({
@@ -47,6 +49,10 @@ function KanbanCard({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onKeyDown={(e) => {
+        listeners?.onKeyDown?.(e);
+        if (e.key === "Enter" && e.target === e.currentTarget && !isDragging) onOpenDetail(task);
+      }}
       onClick={() => !isDragging && onOpenDetail(task)}
       style={
         transform
@@ -60,7 +66,7 @@ function KanbanCard({
     >
       <div className="mb-1.5 flex items-center gap-1.5">
         <PriorityBadge priority={task.priority} variant="dot" />
-        {overdue && <span className="text-[10px] font-bold text-rose-500">חורג</span>}
+        {overdue && <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400">חורג</span>}
       </div>
       <p className="text-sm font-semibold leading-snug text-ink dark:text-ink-dark">{task.title}</p>
       <div className="mt-2 flex items-center justify-between">
@@ -145,7 +151,10 @@ export default function KanbanBoard({
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    // Keyboard: Space picks a card/person up, arrows move it, Space drops, Esc cancels.
+    // Enter is left free to open the item (see onKeyDown on the draggable).
+    useSensor(KeyboardSensor, { keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] } })
   );
 
   const activeTask = tasks.find((t) => t.id === activeId);
@@ -166,7 +175,12 @@ export default function KanbanBoard({
   };
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      accessibility={{ announcements: dndAnnouncements, screenReaderInstructions: dndScreenReaderInstructions }}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
         {COLUMNS.map((status) => (
           <KanbanColumn

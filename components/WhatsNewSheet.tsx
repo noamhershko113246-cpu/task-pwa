@@ -1,10 +1,14 @@
 "use client";
 
+import { useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Megaphone, X } from "lucide-react";
 import { LATEST_RELEASE } from "@/lib/whatsNew";
+import { useDialog } from "@/lib/useDialog";
 
 export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const titleId = useId();
   return (
     <AnimatePresence>
       {open && (
@@ -21,7 +25,11 @@ export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClos
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
-            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
             <div className="flex justify-center pb-3">
               <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
@@ -33,7 +41,7 @@ export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClos
                   <Megaphone size={18} />
                 </span>
                 <div>
-                  <h2 className="text-base font-extrabold text-ink dark:text-ink-dark">
+                  <h2 id={titleId} className="text-base font-extrabold text-ink dark:text-ink-dark">
                     מה חדש{LATEST_RELEASE.label ? ` · ${LATEST_RELEASE.label}` : ""}
                   </h2>
                   <p className="text-xs text-ink-soft dark:text-ink-dark-soft">עודכן ב-{LATEST_RELEASE.date}</p>

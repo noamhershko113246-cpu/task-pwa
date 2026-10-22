@@ -31,7 +31,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
   const slides: Slide[] = [
     {
       icon: Trophy,
-      gradient: "from-amber-400 to-orange-500",
+      gradient: "from-amber-700 to-orange-700",
       title: "היום הכי פרודוקטיבי השבוע",
       value: stats.mostProductiveDay ? `יום ${stats.mostProductiveDay}` : "עוד אין מספיק נתונים",
       caption:
@@ -41,14 +41,14 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
     },
     {
       icon: Clock3,
-      gradient: "from-sky-400 to-blue-500",
+      gradient: "from-sky-700 to-blue-700",
       title: "זמן ממוצע להשלמת משימה",
       value: stats.avgCompletionHours !== null ? formatHours(stats.avgCompletionHours) : "—",
       caption: "מרגע היצירה ועד הסימון כהושלם",
     },
     {
       icon: TrendingUp,
-      gradient: "from-emerald-400 to-teal-500",
+      gradient: "from-emerald-700 to-teal-700",
       title: "השבוע שלך",
       value: `${stats.thisWeekCount} משימות הושלמו`,
       caption:
@@ -71,7 +71,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
   return (
     <section className="mb-5 overflow-hidden rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-card">
       <div className={`relative bg-gradient-to-br ${current.gradient} px-5 pt-5 pb-4 text-white`}>
-        <p className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide opacity-90">
+        <p className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide">
           <Sparkles size={13} />
           Wrapped · הפרודוקטיביות שלך
         </p>
@@ -92,7 +92,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
               <Icon size={20} />
             </div>
-            <p className="text-xs font-semibold opacity-90">{current.title}</p>
+            <p className="text-xs font-semibold">{current.title}</p>
             <motion.p
               initial={{ scale: 0.85, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -101,7 +101,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
             >
               {current.value}
             </motion.p>
-            <p className="mt-1 text-xs opacity-90">{current.caption}</p>
+            <p className="mt-1 text-xs">{current.caption}</p>
           </motion.div>
         </AnimatePresence>
 

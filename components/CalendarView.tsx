@@ -124,7 +124,7 @@ export default function CalendarView({
                     ? "bg-brand-50 dark:bg-brand-500/15 text-brand-600 dark:text-brand-300 font-bold"
                     : inMonth
                     ? "text-ink dark:text-ink-dark hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                    : "text-zinc-300 dark:text-zinc-700"
+                    : "text-zinc-500 dark:text-zinc-400"
                 }`}
               >
                 <span>{date.getDate()}</span>

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Settings, Sun, Moon, MonitorSmartphone, Image as ImageIcon, Trash2, Loader2, Clock, UserCog } from "lucide-react";
+import { useDialog } from "@/lib/useDialog";
 import { useTaskStore, AVATAR_COLORS } from "@/lib/store";
+import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { TeamMember, DEFAULT_DEPARTMENT } from "@/lib/types";
 import { getStoredTheme, setTheme, ThemePreference } from "@/lib/theme";
 import { uploadBackground, removeBackground } from "@/lib/background";
@@ -35,6 +37,9 @@ export default function SettingsSheet({
   member: TeamMember;
 }) {
   const { updateMember, team } = useTaskStore();
+  const keyboard = useKeyboardInset(open);
+  const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const titleId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -210,7 +215,12 @@ export default function SettingsSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
-            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-8 pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
+            style={keyboard ? { bottom: keyboard, maxHeight: `calc(85dvh - ${keyboard}px)` } : undefined}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
             <div className="flex justify-center pb-3">
               <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
@@ -222,7 +232,7 @@ export default function SettingsSheet({
                   <Settings size={18} />
                 </span>
                 <div>
-                  <h2 className="text-base font-extrabold text-ink dark:text-ink-dark">הגדרות</h2>
+                  <h2 id={titleId} className="text-base font-extrabold text-ink dark:text-ink-dark">הגדרות</h2>
                   <p className="text-xs text-ink-soft dark:text-ink-dark-soft">אישי — משפיע רק על החשבון שלך</p>
                 </div>
               </div>
@@ -276,7 +286,7 @@ export default function SettingsSheet({
                         key={`${colorFrom}-${colorTo}`}
                         onClick={() => handlePickAvatarColor(colorFrom, colorTo)}
                         aria-label="בחירת צבע"
-                        className={`aspect-square rounded-full bg-gradient-to-br ${colorFrom} ${colorTo} ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-dark-card transition-all ${
+                        className={`aspect-square rounded-full bg-gradient-avatar ${colorFrom} ${colorTo} ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-dark-card transition-all ${
                           active ? "ring-brand-500 scale-95" : "ring-transparent"
                         }`}
                       />
@@ -378,10 +388,11 @@ export default function SettingsSheet({
                   <p className="text-sm font-bold text-ink dark:text-ink-dark">תזכורת יומית</p>
                   <button
                     role="switch"
+                    aria-label="תזכורת יומית"
                     aria-checked={reminderEnabled}
                     onClick={handleReminderToggle}
                     className={`relative h-6 w-11 rounded-full transition-colors ${
-                      reminderEnabled ? "bg-brand-500" : "bg-zinc-300 dark:bg-zinc-600"
+                      reminderEnabled ? "bg-brand-500" : "bg-zinc-500 dark:bg-zinc-500"
                     }`}
                   >
                     <span
@@ -397,8 +408,8 @@ export default function SettingsSheet({
 
                 <div className={reminderEnabled ? "mt-3 space-y-3" : "mt-3 space-y-3 opacity-40 pointer-events-none"}>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">בשעה</label>
-                    <input
+                    <label htmlFor="st-f1" className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">בשעה</label>
+                    <input id="st-f1"
                       type="time"
                       value={reminderTime}
                       onChange={(e) => handleReminderTime(e.target.value)}
@@ -442,10 +453,10 @@ export default function SettingsSheet({
                 </p>
 
                 <div className="mb-3">
-                  <label className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+                  <label htmlFor="st-f2" className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
                     תדירות חזרה על תזכורת חורגת
                   </label>
-                  <select
+                  <select id="st-f2"
                     value={intervalMinutes}
                     onChange={(e) => handleIntervalChange(Number(e.target.value))}
                     className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent px-3 py-1.5 text-sm text-ink dark:text-ink-dark"
@@ -465,10 +476,11 @@ export default function SettingsSheet({
                   </div>
                   <button
                     role="switch"
+                    aria-label="רק בשעות עבודה"
                     aria-checked={workingHoursEnabled}
                     onClick={handleWorkingHoursToggle}
                     className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      workingHoursEnabled ? "bg-brand-500" : "bg-zinc-300 dark:bg-zinc-600"
+                      workingHoursEnabled ? "bg-brand-500" : "bg-zinc-500 dark:bg-zinc-500"
                     }`}
                   >
                     <span
@@ -481,8 +493,8 @@ export default function SettingsSheet({
 
                 <div className={workingHoursEnabled ? "mt-3 grid grid-cols-2 gap-2" : "mt-3 grid grid-cols-2 gap-2 opacity-40 pointer-events-none"}>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">משעה</label>
-                    <input
+                    <label htmlFor="st-f3" className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">משעה</label>
+                    <input id="st-f3"
                       type="time"
                       value={workingHoursStart}
                       onChange={(e) => handleWorkingHoursStart(e.target.value)}
@@ -490,8 +502,8 @@ export default function SettingsSheet({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">עד שעה</label>
-                    <input
+                    <label htmlFor="st-f4" className="mb-1 block text-xs font-medium text-ink-soft dark:text-ink-dark-soft">עד שעה</label>
+                    <input id="st-f4"
                       type="time"
                       value={workingHoursEnd}
                       onChange={(e) => handleWorkingHoursEnd(e.target.value)}
@@ -520,6 +532,8 @@ export default function SettingsSheet({
                         <button
                           key={colleague.id}
                           onClick={() => handleToggleProxy(colleague.id)}
+                          role="switch"
+                          aria-checked={active}
                           className="flex items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 py-2"
                         >
                           <div className="flex items-center gap-2">
@@ -527,10 +541,9 @@ export default function SettingsSheet({
                             <span className="text-xs font-semibold text-ink dark:text-ink-dark">{colleague.name}</span>
                           </div>
                           <span
-                            role="switch"
-                            aria-checked={active}
+                            aria-hidden="true"
                             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                              active ? "bg-brand-500" : "bg-zinc-300 dark:bg-zinc-600"
+                              active ? "bg-brand-500" : "bg-zinc-500 dark:bg-zinc-500"
                             }`}
                           >
                             <span

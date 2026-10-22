@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import UndoToast from "@/components/UndoToast";
 const UNDO_WINDOW_MS = 6000;
 
 function ManagerBoardInner() {
+  useDocumentTitle("לוח קנבן");
   const router = useRouter();
   const { tasks, team, loading, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -77,7 +79,7 @@ function ManagerBoardInner() {
     // phone-width card on desktop, forcing horizontal scrolling *inside* the card
     // instead of just using the screen. md:max-w-6xl fits all 4 w-64 columns without it.
     <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-6xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
-      <header className="mb-5 flex items-center justify-between">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title="לוח פיקוד — משימות" subtitle="גררו כרטיס בין העמודות" />
         <Link
           href="/manager"

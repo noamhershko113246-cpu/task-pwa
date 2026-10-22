@@ -19,7 +19,7 @@ export default function AppHeader({
     // fixed-width row of header icon buttons) then only fits when there's already enough
     // room, which silently broke on narrow ~360px Android screens once names grew to
     // "first + last" and stopped fitting a manager dashboard's 5-icon header.
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 flex-1 basis-32 items-center gap-3">
       <div
         className="relative shrink-0 overflow-hidden rounded-2xl ring-1 ring-black/5 dark:ring-white/10 shadow-soft"
         style={{ width: logoSize, height: logoSize }}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, ShieldCheck } from "lucide-react";
@@ -17,6 +18,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import clsx from "clsx";
 
 function ManagerHistoryInner() {
+  useDocumentTitle("היסטוריית משימות");
   const { tasks, team, loading, createTasks, updateTask, deleteTask, addComment, addAttachment, removeAttachment } = useTaskStore();
   const [groupBy, setGroupBy] = useState<"member" | "day">("member");
   const [query, setQuery] = useState("");
@@ -35,7 +37,7 @@ function ManagerHistoryInner() {
 
   return (
     <main className="mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
-      <header className="mb-5 flex items-center justify-between">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title="היסטוריית משימות" subtitle="כל המשרד" />
         <Link
           href="/manager"
@@ -106,7 +108,7 @@ function ManagerHistoryInner() {
 
       <button
         onClick={() => setCreateOpen(true)}
-        className="fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
+        className="bottom-above-nav fixed inset-x-0 z-30 mx-auto flex w-max items-center gap-2 whitespace-nowrap rounded-full bg-brand-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-brand-600/30 transition-transform active:scale-95"
       >
         <Plus size={20} strokeWidth={2.5} />
         משימה חדשה

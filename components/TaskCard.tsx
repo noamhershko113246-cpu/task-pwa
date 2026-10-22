@@ -98,9 +98,9 @@ export default function TaskCard({
           onClick={() => onOpenDetail?.(task)}
           role={onOpenDetail ? "button" : undefined}
         >
-          <h3 className="font-semibold text-ink dark:text-ink-dark leading-snug truncate">
+          <h2 className="font-semibold text-ink dark:text-ink-dark leading-snug truncate">
             {task.title}
-          </h3>
+          </h2>
           <p className="mt-0.5 text-sm text-ink-soft dark:text-ink-dark-soft line-clamp-2">
             {task.description}
           </p>
@@ -113,7 +113,7 @@ export default function TaskCard({
               <span
                 className={clsx(
                   "inline-flex items-center gap-1 font-medium",
-                  overdue ? "text-rose-500 animate-pulse-soft" : "text-ink-soft dark:text-ink-dark-soft"
+                  overdue ? "text-rose-700 dark:text-rose-400 animate-pulse-soft" : "text-ink-soft dark:text-ink-dark-soft"
                 )}
               >
                 {overdue ? <AlertCircle size={13} /> : <Calendar size={13} />}
@@ -130,7 +130,7 @@ export default function TaskCard({
             )}
             {/* ms-auto pushes this to the far (left, in RTL) end of the row — the card's bottom corner */}
             <span
-              className="ms-auto text-[10px] text-ink-soft/70 dark:text-ink-dark-soft/70"
+              className="ms-auto text-[10px] text-ink-soft dark:text-ink-dark-soft"
               title="מועד פתיחת המשימה"
             >
               נפתחה {formatCreatedAt(task.createdAt)}
