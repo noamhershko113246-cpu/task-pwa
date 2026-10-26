@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import { ChevronRight, ChevronLeft, Plus } from "lucide-react";
 import { Task, TeamMember, PRIORITY_COLORS } from "@/lib/types";
 import { monthLabel, localDateKey } from "@/lib/utils";
+import { AnimatePresence } from "framer-motion";
 import HistoryTaskRow from "./HistoryTaskRow";
+import ListItemMotion from "./ListItemMotion";
 
 const WEEKDAY_HEADERS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
@@ -161,14 +163,17 @@ export default function CalendarView({
           )}
         </div>
         <div className="space-y-2">
-          {selectedTasks.map((task) => (
-            <HistoryTaskRow
-              key={task.id}
-              task={task}
-              assignees={team.filter((m) => task.assigneeIds.includes(m.id))}
-              onClick={onOpenTask}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {selectedTasks.map((task) => (
+              <ListItemMotion key={task.id}>
+                <HistoryTaskRow
+                  task={task}
+                  assignees={team.filter((m) => task.assigneeIds.includes(m.id))}
+                  onClick={onOpenTask}
+                />
+              </ListItemMotion>
+            ))}
+          </AnimatePresence>
         </div>
       </div>
     </div>

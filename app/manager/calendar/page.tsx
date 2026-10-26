@@ -85,10 +85,11 @@ function ManagerCalendarInner() {
         team={assignableTeam}
         initialDate={createDate ?? undefined}
         currentUserId={me.id}
-        onCreate={(newTasks, categoryId, steps) =>
+        onCreate={(newTasks, categoryId, steps, files) =>
           createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })), {
             category: categoryId ? { userId: me.id, categoryId } : undefined,
             steps,
+            files,
           })
         }
       />

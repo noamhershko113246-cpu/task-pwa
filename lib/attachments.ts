@@ -20,6 +20,23 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
+/** The same list as an <input type="file" accept> value, so the picker only offers what will be accepted. */
+export const ATTACHMENT_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx";
+
+/** How many files can be attached while creating a task (more can always be added from the task itself). */
+export const MAX_FILES_ON_CREATE = 5;
+
+/** null when the file is acceptable, otherwise the reason (in Hebrew) it is not. */
+export function validateAttachmentFile(file: File): string | null {
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    return "סוג קובץ לא נתמך — תמונה (JPG/PNG/WEBP), PDF, Word או Excel בלבד";
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return "הקובץ גדול מדי (מקסימום 15MB)";
+  }
+  return null;
+}
+
 export function isImageAttachment(mimeType: string): boolean {
   return mimeType.startsWith("image/");
 }
@@ -34,17 +51,16 @@ export async function uploadTaskAttachment(
   taskId: string,
   file: File
 ): Promise<{ url: string; fileName: string; mimeType: string; sizeBytes: number } | { error: string }> {
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    return { error: "סוג קובץ לא נתמך — תמונה (JPG/PNG/WEBP), PDF, Word או Excel בלבד" };
-  }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return { error: "הקובץ גדול מדי (מקסימום 15MB)" };
-  }
+  const invalid = validateAttachmentFile(file);
+  if (invalid) return { error: invalid };
 
-  // One subfolder per task, original filename kept but timestamp-prefixed so re-uploading the
-  // same filename twice never silently overwrites the earlier one (unlike the avatar/background
-  // buckets, where a fixed name is the point — here every upload is its own attachment).
-  const path = `${taskId}/${Date.now()}-${file.name}`;
+  // One subfolder per task; every upload is its own object (a timestamp + random suffix, so
+  // re-uploading the same file never overwrites the earlier one). The storage key is plain ASCII on
+  // purpose: the file's real name (often Hebrew, with spaces) is kept in the database for display,
+  // but as a storage key it is rejected by some characters and, once URL-encoded in the public link,
+  // no longer matches the key — which made deleting the file silently fail.
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5);
+  const path = `${taskId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext ? `.${ext}` : ""}`;
   const { error: uploadError } = await supabase.storage
     .from("task-attachments")
     .upload(path, file, { contentType: file.type });
@@ -60,6 +76,7 @@ export async function removeTaskAttachmentFile(fileUrl: string): Promise<void> {
   const marker = "/task-attachments/";
   const idx = fileUrl.indexOf(marker);
   if (idx === -1) return;
-  const path = fileUrl.slice(idx + marker.length);
+  // The public URL is percent-encoded; the storage key is not.
+  const path = decodeURIComponent(fileUrl.slice(idx + marker.length));
   await supabase.storage.from("task-attachments").remove([path]);
 }

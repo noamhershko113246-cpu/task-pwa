@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, useId } from "react";
+import { useEffect, useMemo, useRef, useState, useId } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
-import { X, Repeat, Plus, ChevronUp, ChevronDown, User } from "lucide-react";
+import { X, Repeat, Plus, ChevronUp, ChevronDown, User, Paperclip, FileText } from "lucide-react";
 import { useDialog } from "@/lib/useDialog";
 import { TeamMember, Task, Priority, PRIORITY_COLORS, MAX_STEPS, MAX_STEP_LENGTH } from "@/lib/types";
 import { generateRecurringDates, WEEKDAY_LETTERS, firstName } from "@/lib/utils";
 import { useTaskStore } from "@/lib/store";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { CategoryPicker } from "./CategoryChips";
+import { ATTACHMENT_ACCEPT, MAX_FILES_ON_CREATE, validateAttachmentFile, formatFileSize } from "@/lib/attachments";
 import clsx from "clsx";
+import { DURATION, SHEET_SPRING } from "@/lib/motion";
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
 
@@ -25,8 +27,9 @@ export default function CreateTaskSheet({
   onClose: () => void;
   team: TeamMember[];
   /** categoryId: the creator's own category pick (personal — applies to them only), null = none.
-   *  steps: ordered step titles, copied onto every created task (empty = no steps). */
-  onCreate: (tasks: Omit<Task, "id" | "createdAt" | "status">[], categoryId: string | null, steps: string[]) => void;
+   *  steps: ordered step titles, copied onto every created task (empty = no steps).
+   *  files: files picked to attach (empty = none) — attached to every created task. */
+  onCreate: (tasks: Omit<Task, "id" | "createdAt" | "status">[], categoryId: string | null, steps: string[], files: File[]) => void;
   /** Whoever is logged in — whose personal categories are offered. Omit to hide the picker. */
   currentUserId?: string;
   /** "YYYY-MM-DD" — when opened from a specific calendar day, pre-fills the deadline to that
@@ -45,6 +48,37 @@ export default function CreateTaskSheet({
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [steps, setSteps] = useState<string[]>([]);
   const [newStep, setNewStep] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Local previews for picked images; revoked whenever the list changes or the sheet unmounts.
+  const previews = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)), [files]);
+  useEffect(() => () => previews.forEach((u) => u && URL.revokeObjectURL(u)), [previews]);
+
+  const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (picked.length === 0) return;
+    const next = [...files];
+    const problems: string[] = [];
+    for (const file of picked) {
+      const same = (f: File) => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified;
+      if (next.some(same)) continue; // the same file picked twice
+      const invalid = validateAttachmentFile(file);
+      if (invalid) {
+        problems.push(`${file.name}: ${invalid}`);
+        continue;
+      }
+      if (next.length >= MAX_FILES_ON_CREATE) {
+        problems.push(`אפשר לצרף עד ${MAX_FILES_ON_CREATE} קבצים ביצירה — את השאר אפשר להוסיף מתוך המשימה`);
+        break;
+      }
+      next.push(file);
+    }
+    setFiles(next);
+    setFileError(problems.length > 0 ? problems.join(" · ") : null);
+  };
 
   const addStep = () => {
     const title = newStep.trim();
@@ -112,6 +146,8 @@ export default function CreateTaskSheet({
     setCategoryId(null);
     setSteps([]);
     setNewStep("");
+    setFiles([]);
+    setFileError(null);
   };
 
   const handleClose = () => {
@@ -134,9 +170,9 @@ export default function CreateTaskSheet({
       // tasks.recurrence_id is a real `uuid` column in Postgres — it must be a valid
       // UUID or every insert in the batch is rejected.
       const recurrenceId = crypto.randomUUID();
-      onCreate(recurringDates.map((d) => ({ ...base, deadline: d, recurrenceId })), categoryId, finalSteps);
+      onCreate(recurringDates.map((d) => ({ ...base, deadline: d, recurrenceId })), categoryId, finalSteps, files);
     } else {
-      onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }], categoryId, finalSteps);
+      onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }], categoryId, finalSteps, files);
     }
     handleClose();
   };
@@ -164,7 +200,7 @@ export default function CreateTaskSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            transition={SHEET_SPRING}
             drag="y"
             dragListener={false}
             dragControls={dragControls}
@@ -414,6 +450,70 @@ export default function CreateTaskSheet({
                 </div>
               )}
 
+              {/* Files — uploaded after the task is created, so nothing is lost if the connection drops mid-way */}
+              <div>
+                <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-ink-dark">
+                  <Paperclip size={14} />
+                  קבצים מצורפים
+                </label>
+                {files.length > 0 && (
+                  <ul className="mb-2 space-y-2">
+                    {files.map((file, i) => (
+                      <li
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-800/60"
+                      >
+                        {previews[i] ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- local preview of a just-picked file
+                          <img src={previews[i] as string} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        ) : (
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-200 text-ink-soft dark:bg-zinc-700 dark:text-ink-dark-soft">
+                            <FileText size={18} />
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-ink dark:text-ink-dark">{file.name}</p>
+                          <p className="text-[10px] text-ink-soft dark:text-ink-dark-soft">{formatFileSize(file.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`הסרת ${file.name}`}
+                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"
+                        >
+                          <X size={15} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {files.length < MAX_FILES_ON_CREATE && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-zinc-300 py-2.5 text-xs font-semibold text-ink-soft dark:border-zinc-600 dark:text-ink-dark-soft"
+                  >
+                    <Paperclip size={14} />
+                    הוספת קובץ או תמונה
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ATTACHMENT_ACCEPT}
+                  className="hidden"
+                  onChange={handleFilesPicked}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+                {fileError && (
+                  <p role="alert" className="mt-1.5 text-[11px] text-rose-700 dark:text-rose-400">
+                    {fileError}
+                  </p>
+                )}
+              </div>
+
               {/* Recurring task toggle — like Google Calendar's custom weekly repeat */}
               <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 p-4">
                 <button
@@ -446,7 +546,7 @@ export default function CreateTaskSheet({
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.22 }}
+                      transition={{ duration: DURATION.base }}
                       className="overflow-hidden"
                     >
                       <div className="mt-4 space-y-4 border-t border-zinc-200 dark:border-zinc-700 pt-4">

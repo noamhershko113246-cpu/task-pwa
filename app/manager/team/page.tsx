@@ -76,7 +76,9 @@ function TeamManagementInner() {
   // nowhere on this screen to see or edit where you now sit.
   const roster = isSuperAdmin
     ? team
-    : team.filter((m) => !m.isManager && (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === myUnit);
+    : // A super admin is not a manager by flag but must never appear (with a remove button) in a
+      // regular manager's soldier roster.
+      team.filter((m) => !m.isManager && !m.isSuperAdmin && (m.department ?? DEFAULT_DEPARTMENT) === myDept && m.brigade === myUnit);
 
   // Group the super admin's cross-unit roster by (brigade, department) PAIR, not department
   // alone — 'משא"ן' of מפא"ג and 'משא"ן' of חטיבה 14 are separate, isolated instances that

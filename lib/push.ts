@@ -112,3 +112,14 @@ export async function disablePushNotifications(userId: string): Promise<{ ok: bo
     return { ok: false, reason: "לא ניתן היה לכבות את ההתראות" };
   }
 }
+
+/** Called on logout: stops THIS device from receiving the signed-out person's notifications. Without
+ *  it a shared or borrowed phone keeps getting their task titles after they leave. Best-effort and
+ *  time-boxed so a slow network can never keep someone stuck on the logout button. */
+export async function disablePushOnLogout(userId: string | null | undefined): Promise<void> {
+  if (!userId) return;
+  await Promise.race([
+    disablePushNotifications(userId).catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 2500)),
+  ]);
+}

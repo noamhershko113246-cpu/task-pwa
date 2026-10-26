@@ -1,8 +1,8 @@
 "use client";
 
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Lock, Eye } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
@@ -32,7 +32,24 @@ function StaffHistoryInner() {
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const detailTask = detailTaskId ? myTasks.find((t) => t.id === detailTaskId) ?? null : null;
 
-  if (loading || !member) return <LoadingScreen />;
+  // Same auth guard as /staff: logged in, and `userId` is the viewer or someone in their scope.
+  // Nothing is shown until it passes — this page lets the viewer open, edit and delete tasks.
+  const router = useRouter();
+  const [allowed, setAllowed] = useState(false);
+  useEffect(() => {
+    if (loading) return;
+    const s = getSession();
+    if (!s) {
+      router.replace("/login");
+      return;
+    }
+    const sessionMember = team.find((m) => m.id === s.userId);
+    const ok = Boolean(sessionMember && getVisibleScope(sessionMember, team).some((m) => m.id === userId));
+    setAllowed(ok);
+    if (!ok) router.replace(`/staff/history?user=${s.userId}`);
+  }, [router, userId, team, loading]);
+
+  if (loading || !member || !allowed) return <LoadingScreen />;
 
   const viewerMember = team.find((m) => m.id === session?.userId) ?? member;
   const assignableTeam = getVisibleScope(viewerMember, team);

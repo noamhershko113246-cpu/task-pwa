@@ -11,8 +11,11 @@ import { getStoredTheme, setTheme, ThemePreference } from "@/lib/theme";
 import { uploadBackground, removeBackground } from "@/lib/background";
 import { uploadAvatarPhoto, removeAvatarPhoto } from "@/lib/avatar";
 import { BACKGROUND_PRESETS } from "@/lib/backgroundPresets";
+import AdaptiveColorsSettings from "./AdaptiveColorsSettings";
+import CardOpacitySettings from "./CardOpacitySettings";
 import Avatar from "./Avatar";
 import CategoriesSettings from "./CategoriesSettings";
+import { SHEET_SPRING } from "@/lib/motion";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "לפי המערכת", icon: MonitorSmartphone },
@@ -214,7 +217,7 @@ export default function SettingsSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            transition={SHEET_SPRING}
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(85dvh - ${keyboard}px)` } : undefined}
             ref={dialogRef}
             role="dialog"
@@ -381,6 +384,11 @@ export default function SettingsSheet({
                   ))}
                 </div>
               </section>
+
+              {/* Accent color: regular, or taken from the background — see lib/adaptiveColors.ts */}
+              <AdaptiveColorsSettings />
+
+              <CardOpacitySettings member={member} />
 
               {/* Daily open-tasks reminder */}
               <section>

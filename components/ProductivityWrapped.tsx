@@ -5,6 +5,7 @@ import { AnimatePresence, motion, PanInfo } from "framer-motion";
 import { Sparkles, Trophy, Clock3, TrendingUp, LucideIcon } from "lucide-react";
 import { Task } from "@/lib/types";
 import { computeWrappedStats } from "@/lib/insights";
+import { DURATION } from "@/lib/motion";
 
 const SWIPE_THRESHOLD = 60;
 
@@ -16,7 +17,7 @@ function formatHours(hours: number): string {
 
 interface Slide {
   icon: LucideIcon;
-  gradient: string;
+  gradient: [string, string]; // from / to, as "R G B" so the card's transparency can be applied
   title: string;
   value: string;
   caption: string;
@@ -31,7 +32,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
   const slides: Slide[] = [
     {
       icon: Trophy,
-      gradient: "from-amber-700 to-orange-700",
+      gradient: ["180 83 9", "194 65 12"], // amber-700 → orange-700
       title: "היום הכי פרודוקטיבי השבוע",
       value: stats.mostProductiveDay ? `יום ${stats.mostProductiveDay}` : "עוד אין מספיק נתונים",
       caption:
@@ -41,14 +42,14 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
     },
     {
       icon: Clock3,
-      gradient: "from-sky-700 to-blue-700",
+      gradient: ["3 105 161", "29 78 216"], // sky-700 → blue-700
       title: "זמן ממוצע להשלמת משימה",
       value: stats.avgCompletionHours !== null ? formatHours(stats.avgCompletionHours) : "—",
       caption: "מרגע היצירה ועד הסימון כהושלם",
     },
     {
       icon: TrendingUp,
-      gradient: "from-emerald-700 to-teal-700",
+      gradient: ["4 120 87", "15 118 110"], // emerald-700 → teal-700
       title: "השבוע שלך",
       value: `${stats.thisWeekCount} משימות הושלמו`,
       caption:
@@ -70,7 +71,14 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
 
   return (
     <section className="mb-5 overflow-hidden rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-card">
-      <div className={`relative bg-gradient-to-br ${current.gradient} px-5 pt-5 pb-4 text-white`}>
+      {/* See-through like the other cards (.wrapped-glass, globals.css), but kept a step more solid
+          and with a soft text shadow, since its text is white on color. */}
+      <div
+        className="wrapped-glass relative px-5 pt-5 pb-4 text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
+        style={{
+          backgroundImage: `linear-gradient(to bottom right, rgb(${current.gradient[0]} / var(--wrapped-alpha)), rgb(${current.gradient[1]} / var(--wrapped-alpha)))`,
+        }}
+      >
         <p className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide">
           <Sparkles size={13} />
           Wrapped · הפרודוקטיביות שלך
@@ -86,7 +94,7 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: DURATION.slow }}
             className="min-h-[104px] cursor-grab touch-pan-y active:cursor-grabbing"
           >
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">

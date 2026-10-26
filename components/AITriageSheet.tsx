@@ -7,6 +7,7 @@ import { useDialog } from "@/lib/useDialog";
 import { Task, TeamMember, PRIORITY_COLORS } from "@/lib/types";
 import { formatDeadline } from "@/lib/utils";
 import { analyzeTasks } from "@/lib/insights";
+import { SHEET_SPRING } from "@/lib/motion";
 
 const listVariants: Variants = {
   hidden: {},
@@ -60,7 +61,7 @@ export default function AITriageSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            transition={SHEET_SPRING}
             ref={dialogRef}
             role="dialog"
             aria-modal="true"

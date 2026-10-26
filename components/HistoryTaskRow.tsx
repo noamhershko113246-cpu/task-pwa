@@ -1,4 +1,10 @@
+"use client";
+
+import { useState } from "react";
+import clsx from "clsx";
 import { Task, TeamMember, Category } from "@/lib/types";
+import { useLongPress } from "@/lib/useLongPress";
+import TaskActionMenu, { TaskActionMenuConfig } from "./TaskActionMenu";
 import { CategoryBadge } from "./CategoryChips";
 import StepProgress from "./StepProgress";
 import { formatCompletedAt } from "@/lib/utils";
@@ -13,6 +19,7 @@ export default function HistoryTaskRow({
   dateLabel,
   category,
   onClick,
+  menu,
 }: {
   task: Task;
   assignees?: TeamMember[];
@@ -20,15 +27,32 @@ export default function HistoryTaskRow({
   category?: Category; // the viewer's own category for this task
 
   onClick?: (task: Task) => void;
+  /** Turns on the long-press / right-click menu (open, category, priority). */
+  menu?: TaskActionMenuConfig;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const longPress = useLongPress(() => setMenuOpen(true), { enabled: Boolean(menu) });
   return (
+    <>
     <div
       onClick={() => onClick?.(task)}
       role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick(task);
+        }
+      }}
+      {...(menu ? longPress.handlers : {})}
       // flex-wrap + a title basis: on wide phones everything still fits on one line exactly as
       // before, but on 320–375px phones the badges (category, steps, attachments, status) drop to
       // a second line instead of squeezing the title down to a few pixels.
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card"
+      className={clsx(
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3.5 shadow-card transition-transform",
+        menu && "select-none [-webkit-touch-callout:none]",
+        longPress.pressing && "scale-[0.985]"
+      )}
     >
       <PriorityBadge priority={task.priority} variant="dot" />
       {assignees && assignees.length > 0 && (
@@ -68,5 +92,9 @@ export default function HistoryTaskRow({
       )}
       <StatusBadge status={task.status} className="shrink-0" />
     </div>
+    {menu && (
+      <TaskActionMenu task={task} open={menuOpen} onClose={() => setMenuOpen(false)} config={menu} onOpenDetail={onClick} />
+    )}
+    </>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { MotionConfig } from "framer-motion";
 import { ToastProvider } from "@/components/ToastProvider";
 import { WhatsNewProvider } from "@/components/WhatsNewProvider";
 import { TaskStoreProvider } from "@/lib/store";
 import { applyTheme, getStoredTheme } from "@/lib/theme";
+import AdaptiveColors from "@/components/AdaptiveColors";
+import { applyCardOpacity, getCardOpacity } from "@/lib/cardOpacity";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // Applied post-mount, like every other per-account preference (background image, avatar
@@ -20,13 +23,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // to an app that doesn't actually respect the choice at all.
   useEffect(() => {
     applyTheme(getStoredTheme());
+    applyCardOpacity(getCardOpacity());
   }, []);
 
+  // The CSS rule in globals.css only reaches CSS animations; framer-motion drives its own, so it has
+  // to be told to follow the "reduce motion" setting too (it then keeps fades but drops movement).
   return (
-    <ToastProvider>
-      <TaskStoreProvider>
-        <WhatsNewProvider>{children}</WhatsNewProvider>
-      </TaskStoreProvider>
-    </ToastProvider>
+    <MotionConfig reducedMotion="user">
+      <ToastProvider>
+        <TaskStoreProvider>
+          <AdaptiveColors />
+          <WhatsNewProvider>{children}</WhatsNewProvider>
+        </TaskStoreProvider>
+      </ToastProvider>
+    </MotionConfig>
   );
 }

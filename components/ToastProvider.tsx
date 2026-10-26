@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { DURATION } from "@/lib/motion";
 
 interface ToastItem {
   id: string;
@@ -39,7 +40,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               initial={{ opacity: 0, y: -12, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.95 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: DURATION.base }}
               className={`pointer-events-auto flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium text-white shadow-xl ${
                 t.type === "error" ? "bg-rose-600" : "bg-zinc-900 dark:bg-zinc-800"
               }`}

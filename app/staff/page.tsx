@@ -3,10 +3,12 @@
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
+import ListItemMotion from "@/components/ListItemMotion";
 import { ChevronRight, Lock, Eye, LogOut, Megaphone, Plus, Wand2, Settings, UserPlus } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession, clearSession } from "@/lib/auth";
+import { disablePushOnLogout } from "@/lib/push";
 import { useTaskStore } from "@/lib/store";
 import { useWhatsNew } from "@/components/WhatsNewProvider";
 import TaskCard from "@/components/TaskCard";
@@ -145,20 +147,21 @@ function StaffDashboardInner() {
     if (undoTimer.current) clearTimeout(undoTimer.current);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await disablePushOnLogout(session?.userId);
     clearSession();
     router.push("/login");
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.92)] dark:[--bg-scrim:rgba(24,24,27,0.92)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <AppBackground member={member} />
       <header className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <AppHeader title={member.name} subtitle={viewingAsManager ? "צופה/ת במשימות של" : "שלום,"} />
         {backHref ? (
           <a
             href={backHref}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full glass shadow-soft"
             aria-label="חזרה"
           >
             <ChevronRight size={18} className="text-ink-soft" />
@@ -171,7 +174,7 @@ function StaffDashboardInner() {
             {(member.isManager || member.isSuperAdmin) && (
               <a
                 href="/manager"
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+                className="flex h-11 w-11 items-center justify-center rounded-full glass shadow-soft"
                 aria-label="חזרה ללוח פיקוד"
                 title="חזרה ללוח פיקוד"
               >
@@ -246,24 +249,19 @@ function StaffDashboardInner() {
       )}
 
       <div className="space-y-3">
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence initial={false}>
           {openTasks.map((task) => (
-            <motion.div
-              key={task.id}
-              layout
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-              transition={{ duration: 0.25 }}
-            >
+            <ListItemMotion key={task.id}>
               <TaskCard
                 task={task}
                 creatorName={task.createdBy ? team.find((m) => m.id === task.createdBy)?.name : undefined}
                 category={getTaskCategory(task.id, categoryOwnerId)}
                 onComplete={handleComplete}
                 onOpenDetail={(t) => setDetailTaskId(t.id)}
+                // On someone else's page the categories shown are theirs and read-only, so the category option is hidden there.
+                menu={{ actorId: viewerId, categoryOwnerId: viewingAsManager ? null : categoryOwnerId }}
               />
-            </motion.div>
+            </ListItemMotion>
           ))}
         </AnimatePresence>
       </div>
@@ -292,10 +290,11 @@ function StaffDashboardInner() {
         // Attribute to whoever is actually creating it (session owner), not the page's owner —
         // those differ now that a manager or proxy can create a task from someone else's page.
         currentUserId={viewerId}
-        onCreate={(newTasks, categoryId, steps) =>
+        onCreate={(newTasks, categoryId, steps, files) =>
           createTasks(newTasks.map((t) => ({ ...t, createdBy: session?.userId ?? member.id })), {
             category: categoryId ? { userId: viewerId, categoryId } : undefined,
             steps,
+            files,
           })
         }
       />

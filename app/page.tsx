@@ -27,5 +27,5 @@ export default function RootGateway() {
     router.replace(member.isManager || member.isSuperAdmin ? "/manager" : `/staff?user=${member.id}`);
   }, [router, team, loading]);
 
-  return <LoadingScreen />;
+  return <LoadingScreen variant="logo" />;
 }

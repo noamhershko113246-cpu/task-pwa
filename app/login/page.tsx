@@ -11,6 +11,7 @@ import { useTaskStore } from "@/lib/store";
 import type { TeamMember } from "@/lib/types";
 import { setSession } from "@/lib/auth";
 import LoadingScreen from "@/components/LoadingScreen";
+import { DURATION } from "@/lib/motion";
 
 export default function LoginPage() {
   useDocumentTitle("התחברות");
@@ -24,7 +25,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [checking, setChecking] = useState(false);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen variant="logo" />;
 
   const handleLogin = () => {
     setError("");
@@ -87,7 +88,7 @@ export default function LoginPage() {
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
+        transition={{ duration: DURATION.slow }}
         className="flex flex-col items-center text-center"
       >
         <div className="relative h-24 w-24 overflow-hidden rounded-3xl shadow-card ring-1 ring-black/5 dark:ring-white/10">
@@ -105,7 +106,7 @@ export default function LoginPage() {
       <motion.div
         initial={{ opacity: 0, x: 16 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.25 }}
+        transition={{ duration: DURATION.base }}
         className="space-y-4"
       >
         {pendingAdmin ? (

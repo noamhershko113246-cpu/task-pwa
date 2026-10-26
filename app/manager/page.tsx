@@ -8,6 +8,7 @@ import { Plus, AlertCircle, ShieldCheck, LogOut, FileDown, Megaphone, Users, Lay
 import { Priority, getVisibleScope } from "@/lib/types";
 import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadlineDesc, activeTasks, completionPercent } from "@/lib/utils";
 import { getSession, clearSession } from "@/lib/auth";
+import { disablePushOnLogout } from "@/lib/push";
 import { useTaskStore } from "@/lib/store";
 import { useWhatsNew } from "@/components/WhatsNewProvider";
 import ProgressRing from "@/components/ProgressRing";
@@ -25,6 +26,8 @@ import PriorityFilter from "@/components/PriorityFilter";
 import { CategoryFilter, matchesCategoryFilter, useCategoryFilter } from "@/components/CategoryChips";
 import HistoryTaskRow from "@/components/HistoryTaskRow";
 import LoadingScreen from "@/components/LoadingScreen";
+import { AnimatePresence } from "framer-motion";
+import ListItemMotion from "@/components/ListItemMotion";
 import NotificationBell from "@/components/NotificationBell";
 import HeaderMenu from "@/components/HeaderMenu";
 import SettingsSheet from "@/components/SettingsSheet";
@@ -132,13 +135,14 @@ function ManagerDashboardInner() {
   const myDoneCount = myActiveTasks.filter((t) => t.status === "done").length;
   const myPercent = completionPercent(myTasks);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await disablePushOnLogout(sessionUserId);
     clearSession();
     router.push("/login");
   };
 
   return (
-    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.92)] dark:[--bg-scrim:rgba(24,24,27,0.92)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
+    <main className="relative mx-auto min-h-dvh max-w-md px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] [--bg-scrim:rgba(250,250,250,0.82)] dark:[--bg-scrim:rgba(24,24,27,0.82)] md:my-8 md:max-w-3xl md:rounded-3xl md:bg-surface md:shadow-xl md:dark:bg-surface-dark">
       <AppBackground member={me} />
       {/* One row: title + bell + ⋮. This header used to hold 5–7 separate 44px icon buttons (and a
           two-row workaround for them), which still overflowed the screen on ≤375px phones for the
@@ -186,7 +190,7 @@ function ManagerDashboardInner() {
         </div>
         <button
           onClick={() => exportTasksToCsv(visibleTasks, team)}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-surface-dark-card shadow-soft transition-transform active:scale-95"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 glass shadow-soft transition-transform active:scale-95"
           aria-label="ייצוא לאקסל"
           title="ייצוא לאקסל"
         >
@@ -206,14 +210,14 @@ function ManagerDashboardInner() {
         <div className="mb-5 grid grid-cols-2 gap-3">
           <Link
             href="/manager/board"
-            className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card transition-transform active:scale-[0.98]"
+            className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3.5 shadow-card transition-transform active:scale-[0.98]"
           >
             <LayoutGrid size={18} className="text-brand-600 dark:text-brand-300" />
             <span className="text-sm font-bold text-ink dark:text-ink-dark">לוח משימות</span>
           </Link>
           <Link
             href="/manager/calendar"
-            className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card transition-transform active:scale-[0.98]"
+            className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3.5 shadow-card transition-transform active:scale-[0.98]"
           >
             <CalendarDays size={18} className="text-brand-600 dark:text-brand-300" />
             <span className="text-sm font-bold text-ink dark:text-ink-dark">לוח שנה</span>
@@ -235,6 +239,7 @@ function ManagerDashboardInner() {
                   assignees={assignees}
                   category={getTaskCategory(task.id, me.id)}
                   onClick={(t) => setDetailTaskId(t.id)}
+                  menu={{ actorId: me.id, categoryOwnerId: me.id }}
                 />
               );
             })
@@ -249,7 +254,7 @@ function ManagerDashboardInner() {
               "mb-6 flex items-center gap-4 rounded-2xl border p-4 shadow-card transition-transform active:scale-[0.98]",
               myOpenCount === 0
                 ? "border-emerald-100 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10"
-                : "border-brand-100 dark:border-brand-500/20 bg-brand-50 dark:bg-brand-500/10"
+                : "border-brand-100 dark:border-brand-500/20 bg-brand-50/[var(--glass-alpha)] backdrop-blur-[6px] dark:bg-brand-500/10"
             )}
           >
             <ProgressRing percent={myPercent} size={56} strokeWidth={6} />
@@ -262,7 +267,7 @@ function ManagerDashboardInner() {
           </Link>
 
           {/* Overall progress */}
-          <section className="mb-5 flex items-center gap-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-5 shadow-card">
+          <section className="mb-5 flex items-center gap-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 glass p-5 shadow-card">
             <ProgressRing percent={overallPercent} sublabel="הושלם" />
             <div>
               <p className="text-sm font-semibold text-ink dark:text-ink-dark">התקדמות כללית להיום</p>
@@ -288,7 +293,7 @@ function ManagerDashboardInner() {
                 <Link
                   key={member.id}
                   href={`/staff?user=${member.id}`}
-                  className="flex shrink-0 flex-col items-center gap-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3 shadow-card transition-transform active:scale-95"
+                  className="flex shrink-0 flex-col items-center gap-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3 shadow-card transition-transform active:scale-95"
                 >
                   <ProgressRing percent={percent} size={64} strokeWidth={7} />
                   <div className="flex items-center gap-1.5">
@@ -309,12 +314,13 @@ function ManagerDashboardInner() {
                 חורגות מדדליין ({overdueTasks.length})
               </p>
               <div className="space-y-2.5">
+                <AnimatePresence initial={false}>
                 {overdueTasks.map((task) => {
                   const assignees = team.filter((m) => task.assigneeIds.includes(m.id));
                   if (assignees.length === 0) return null;
                   return (
+                    <ListItemMotion key={task.id}>
                     <div
-                      key={task.id}
                       onClick={() => setDetailTaskId(task.id)}
                       className="flex items-center gap-3 rounded-2xl border border-rose-200/70 dark:border-rose-500/20 bg-rose-50/70 dark:bg-rose-500/10 p-3.5 animate-pulse-soft"
                     >
@@ -332,14 +338,16 @@ function ManagerDashboardInner() {
                       </div>
                       <StatusBadge status={task.status} />
                     </div>
+                    </ListItemMotion>
                   );
                 })}
+                </AnimatePresence>
               </div>
             </section>
           )}
 
           {/* Activity stream */}
-          <section className="mb-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-5 shadow-card">
+          <section className="mb-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 glass p-5 shadow-card">
             <p className="mb-4 text-sm font-bold text-ink dark:text-ink-dark">יומן פעילות</p>
             <ActivityTimeline events={visibleActivity} team={team} />
           </section>
@@ -377,10 +385,11 @@ function ManagerDashboardInner() {
         onClose={() => setSheetOpen(false)}
         team={assignableTeam}
         currentUserId={me.id}
-        onCreate={(newTasks, categoryId, steps) =>
+        onCreate={(newTasks, categoryId, steps, files) =>
           createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })), {
             category: categoryId ? { userId: me.id, categoryId } : undefined,
             steps,
+            files,
           })
         }
       />

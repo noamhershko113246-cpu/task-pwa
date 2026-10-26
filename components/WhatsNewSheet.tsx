@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Megaphone, X } from "lucide-react";
 import { LATEST_RELEASE } from "@/lib/whatsNew";
 import { useDialog } from "@/lib/useDialog";
+import { SHEET_SPRING } from "@/lib/motion";
 
 export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialogRef = useDialog<HTMLDivElement>(open, onClose);
@@ -24,7 +25,7 @@ export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClos
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            transition={SHEET_SPRING}
             ref={dialogRef}
             role="dialog"
             aria-modal="true"

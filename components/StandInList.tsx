@@ -67,7 +67,7 @@ export default function StandInList({
   const flat = targets.length <= FLAT_LIST_MAX || orderedUnits.length === 1;
 
   return (
-    <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3.5 shadow-card">
+    <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3.5 shadow-card">
       <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink dark:text-ink-dark">
         <UserCog size={13} className="text-ink-soft dark:text-ink-dark-soft" />
         ממלא/ת מקום עבור

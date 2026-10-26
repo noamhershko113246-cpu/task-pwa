@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, R
 import { Task, ActivityEvent, TeamMember, Comment, Attachment, TaskStatus, Priority, STATUS_LABELS, DEFAULT_DEPARTMENT, Category, TaskStep, StepDraft } from "./types";
 import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
-import { removeTaskAttachmentFile } from "./attachments";
+import { removeTaskAttachmentFile, uploadTaskAttachment } from "./attachments";
 import { HQ_UNIT, OrgUnit, SEED_ORG_UNITS } from "./orgStructure";
 
 // Exported so the Settings UI can offer the exact same palette as a picker, instead of only
@@ -251,9 +251,11 @@ interface TaskStoreValue {
   // in the create sheet) — other assignees are left uncategorized, since categories are personal.
   // options.steps: step titles, in order — copied onto every created task (each recurring instance
   // gets its own fresh, all-open set).
+  // options.files: files picked in the create sheet. Uploaded once, after the tasks exist, and attached
+  // to every created task (a recurring series shares the one stored file).
   createTasks: (
     newTasks: Omit<Task, "id" | "createdAt" | "status">[],
-    options?: { category?: { userId: string; categoryId: string }; steps?: string[] }
+    options?: { category?: { userId: string; categoryId: string }; steps?: string[]; files?: File[] }
   ) => void;
   // actorId: who's actually performing this edit — required to log/notify correctly when a
   // reassignment amounts to one person transferring the task to another (see updateTask below).
@@ -360,71 +362,99 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     [showToast]
   );
 
-  // Initial fetch
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes, orgUnitsRes, orgDeptsRes, categoriesRes, taskCategoriesRes, stepsRes] = await Promise.all([
-        supabase.from("team_members").select("*").order("created_at"),
-        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-        supabase.from("task_comments").select("*").order("created_at"),
-        supabase.from("task_attachments").select("*").order("created_at"),
-        supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
-        supabase.from("org_units").select("*").order("created_at"),
-        supabase.from("org_departments").select("*").order("created_at"),
-        supabase.from("user_categories").select("*").order("sort_order").order("created_at"),
-        supabase.from("task_category_assignments").select("task_id, user_id, category_id"),
-        supabase.from("task_steps").select("*").order("sort_order").order("created_at"),
-      ]);
-      if (cancelled) return;
-      if (teamRes.error || tasksRes.error) {
-        showToast("לא הצלחנו לטעון את הנתונים. בדקו את החיבור לאינטרנט ורעננו את הדף.", "error");
-      }
-      if (teamRes.data) setTeam(teamRes.data.map(memberFromRow));
-      if (tasksRes.data) setRawTasks(tasksRes.data.map(taskFromRow));
-      if (commentsRes.data) {
-        const grouped: Record<string, Comment[]> = {};
-        for (const row of commentsRes.data as CommentRow[]) {
-          const c = commentFromRow(row);
-          (grouped[row.task_id] ??= []).push(c);
-        }
-        setCommentsByTask(grouped);
-      }
-      if (attachmentsRes.data) {
-        const grouped: Record<string, Attachment[]> = {};
-        for (const row of attachmentsRes.data as AttachmentRow[]) {
-          const a = attachmentFromRow(row);
-          (grouped[row.task_id] ??= []).push(a);
-        }
-        setAttachmentsByTask(grouped);
-      }
-      if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
-      if (orgUnitsRes.data) setOrgUnitRows(orgUnitsRes.data as OrgUnitRow[]);
-      if (orgDeptsRes.data) setOrgDeptRows(orgDeptsRes.data as OrgDepartmentRow[]);
-      if (categoriesRes.data) setCategories((categoriesRes.data as CategoryRow[]).map(categoryFromRow));
-      if (taskCategoriesRes.data) {
-        const map: Record<string, string> = {};
-        for (const row of taskCategoriesRes.data as TaskCategoryRow[]) {
-          map[taskCategoryKey(row.task_id, row.user_id)] = row.category_id;
-        }
-        setTaskCategories(map);
-      }
-      if (stepsRes.data) {
-        const grouped: Record<string, TaskStep[]> = {};
-        for (const row of stepsRes.data as StepRow[]) {
-          (grouped[row.task_id] ??= []).push(stepFromRow(row));
-        }
-        setStepsByTask(grouped);
-      }
-      setLoading(false);
+  // Loads (or reloads) everything. Runs on first mount, and again whenever the app may have missed
+  // live updates — the phone slept, the connection dropped and came back, or the tab sat hidden.
+  // Realtime only delivers changes that happen while connected, so without this the screen could
+  // stay stale until a manual reload.
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+  const mountedRef = useRef(true);
+  const lastFetchAtRef = useRef(0);
+  const fetchAll = useCallback(async (isInitial: boolean) => {
+    lastFetchAtRef.current = Date.now();
+    const [teamRes, tasksRes, commentsRes, attachmentsRes, activityRes, orgUnitsRes, orgDeptsRes, categoriesRes, taskCategoriesRes, stepsRes] = await Promise.all([
+      supabase.from("team_members").select("*").order("created_at"),
+      supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+      supabase.from("task_comments").select("*").order("created_at"),
+      supabase.from("task_attachments").select("*").order("created_at"),
+      supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("org_units").select("*").order("created_at"),
+      supabase.from("org_departments").select("*").order("created_at"),
+      supabase.from("user_categories").select("*").order("sort_order").order("created_at"),
+      supabase.from("task_category_assignments").select("task_id, user_id, category_id"),
+      supabase.from("task_steps").select("*").order("sort_order").order("created_at"),
+    ]);
+    if (!mountedRef.current) return;
+    // A silent background refresh that fails just keeps what is already on screen.
+    if (isInitial && (teamRes.error || tasksRes.error)) {
+      showToastRef.current("לא הצלחנו לטעון את הנתונים. בדקו את החיבור לאינטרנט ורעננו את הדף.", "error");
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
+    if (teamRes.data) setTeam(teamRes.data.map(memberFromRow));
+    if (tasksRes.data) setRawTasks(tasksRes.data.map(taskFromRow));
+    if (commentsRes.data) {
+      const grouped: Record<string, Comment[]> = {};
+      for (const row of commentsRes.data as CommentRow[]) {
+        const c = commentFromRow(row);
+        (grouped[row.task_id] ??= []).push(c);
+      }
+      setCommentsByTask(grouped);
+    }
+    if (attachmentsRes.data) {
+      const grouped: Record<string, Attachment[]> = {};
+      for (const row of attachmentsRes.data as AttachmentRow[]) {
+        const a = attachmentFromRow(row);
+        (grouped[row.task_id] ??= []).push(a);
+      }
+      setAttachmentsByTask(grouped);
+    }
+    if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
+    if (orgUnitsRes.data) setOrgUnitRows(orgUnitsRes.data as OrgUnitRow[]);
+    if (orgDeptsRes.data) setOrgDeptRows(orgDeptsRes.data as OrgDepartmentRow[]);
+    if (categoriesRes.data) setCategories((categoriesRes.data as CategoryRow[]).map(categoryFromRow));
+    if (taskCategoriesRes.data) {
+      const map: Record<string, string> = {};
+      for (const row of taskCategoriesRes.data as TaskCategoryRow[]) {
+        map[taskCategoryKey(row.task_id, row.user_id)] = row.category_id;
+      }
+      setTaskCategories(map);
+    }
+    if (stepsRes.data) {
+      const grouped: Record<string, TaskStep[]> = {};
+      for (const row of stepsRes.data as StepRow[]) {
+        (grouped[row.task_id] ??= []).push(stepFromRow(row));
+      }
+      setStepsByTask(grouped);
+    }
+    setLoading(false);
   }, []);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchAll(true);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [fetchAll]);
+
+  // Catch up after the app comes back to the foreground or the network returns.
+  useEffect(() => {
+    const REFRESH_AFTER_MS = 30_000; // brief tab switches don't need a reload
+    const refreshIfStale = () => {
+      if (Date.now() - lastFetchAtRef.current >= REFRESH_AFTER_MS) fetchAll(false);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshIfStale();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", refreshIfStale);
+    };
+  }, [fetchAll]);
+
   // Realtime subscriptions — this is what makes changes appear live on every device.
+  const hasConnectedRef = useRef(false);
   useEffect(() => {
     const channel = supabase
       .channel("task-pwa-realtime")
@@ -562,12 +592,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        // The first SUBSCRIBED is the initial connect (data is already loading). Any later one means
+        // the connection dropped and came back, so whatever changed in between was never delivered.
+        if (status === "SUBSCRIBED") {
+          if (hasConnectedRef.current) fetchAll(false);
+          hasConnectedRef.current = true;
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchAll]);
 
   const logActivity = useCallback(async (event: Omit<ActivityEvent, "id" | "timestamp">) => {
     await supabase.from("activity_log").insert({
@@ -675,7 +712,64 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           });
         }
 
+        // Shown right away instead of waiting for the realtime echo, which can lag or not arrive.
+        setRawTasks((prev) => {
+          const known = new Set(prev.map((t) => t.id));
+          const added = createdRows.filter((r) => !known.has(r.id)).map(taskFromRow);
+          return added.length > 0 ? [...added, ...prev] : prev;
+        });
+
         showToast(createdRows.length > 1 ? `${createdRows.length} משימות נוצרו בהצלחה` : "המשימה נוצרה בהצלחה");
+
+        // Files are attached AFTER the tasks exist (the storage path needs a task id). A failed upload does
+        // not undo the task — losing the task over a file would be worse — it is reported so the file can be
+        // added again from the task itself.
+        const files = options?.files ?? [];
+        if (files.length > 0) {
+          showToast(files.length > 1 ? `מעלה ${files.length} קבצים...` : "מעלה את הקובץ...");
+          const uploader = newTasks[0]?.createdBy ?? null;
+          const failed: string[] = [];
+          for (const file of files) {
+            const uploaded = await uploadTaskAttachment(createdRows[0].id, file);
+            if ("error" in uploaded) {
+              failed.push(file.name);
+              continue;
+            }
+            const attachmentRows = createdRows.map((row) => ({
+              task_id: row.id,
+              uploaded_by: uploader,
+              file_url: uploaded.url,
+              file_name: uploaded.fileName,
+              mime_type: uploaded.mimeType,
+              size_bytes: uploaded.sizeBytes,
+            }));
+            let saved = true;
+            for (let i = 0; i < attachmentRows.length; i += INSERT_BATCH_SIZE) {
+              const { data: inserted, error: attachError } = await supabase
+                .from("task_attachments")
+                .insert(attachmentRows.slice(i, i + INSERT_BATCH_SIZE))
+                .select();
+              if (attachError) {
+                saved = false;
+                break;
+              }
+              setAttachmentsByTask((prev) => {
+                const next = { ...prev };
+                for (const r of (inserted ?? []) as AttachmentRow[]) {
+                  const list = next[r.task_id] ?? [];
+                  if (!list.some((a) => a.id === r.id)) next[r.task_id] = [...list, attachmentFromRow(r)];
+                }
+                return next;
+              });
+            }
+            if (!saved) failed.push(file.name);
+          }
+          if (failed.length === 0) {
+            showToast(files.length > 1 ? "הקבצים צורפו למשימה" : "הקובץ צורף למשימה");
+          } else {
+            showToast(`לא הצלחנו לצרף: ${failed.join(", ")}. אפשר להוסיף אותם מתוך המשימה.`, "error");
+          }
+        }
 
         // Build every activity_log row up front and insert them all in one request,
         // instead of one `await` per task (which was serial and slow for recurring batches).
@@ -730,25 +824,45 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // catches up once the realtime echo arrives, which never happens synchronously here.
       const taskBeforeUpdate = rawTasksRef.current.find((t) => t.id === id);
 
+      // The task sheet always sends the status along with every save, even when only the title or
+      // description changed. Re-applying an unchanged status would reset a finished task's completion
+      // time (moving it to another day in the history) and re-notify everyone, so only a real change counts.
+      const statusChanged = patch.status !== undefined && (!taskBeforeUpdate || patch.status !== taskBeforeUpdate.status);
+
       const dbPatch: Record<string, unknown> = {};
-      if (patch.title !== undefined) dbPatch.title = patch.title;
-      if (patch.description !== undefined) dbPatch.description = patch.description;
-      if (patch.assigneeIds !== undefined) dbPatch.assignee_ids = patch.assigneeIds;
-      if (patch.deadline !== undefined) dbPatch.deadline = patch.deadline;
-      if (patch.status !== undefined) {
+      const localPatch: Partial<Omit<Task, "comments">> = {};
+      if (patch.title !== undefined) { dbPatch.title = patch.title; localPatch.title = patch.title; }
+      if (patch.description !== undefined) { dbPatch.description = patch.description; localPatch.description = patch.description; }
+      if (patch.assigneeIds !== undefined) { dbPatch.assignee_ids = patch.assigneeIds; localPatch.assigneeIds = patch.assigneeIds; }
+      if (patch.deadline !== undefined) { dbPatch.deadline = patch.deadline; localPatch.deadline = patch.deadline; }
+      if (statusChanged && patch.status !== undefined) {
         dbPatch.status = patch.status;
+        localPatch.status = patch.status;
         // Track exactly when a task became done, so "today's progress" can be
         // computed correctly instead of counting every done task ever.
-        dbPatch.completed_at = patch.status === "done" ? new Date().toISOString() : null;
+        const completedAt = patch.status === "done" ? new Date().toISOString() : null;
+        dbPatch.completed_at = completedAt;
+        localPatch.completedAt = completedAt ?? undefined;
       }
-      if (patch.priority !== undefined) dbPatch.priority = patch.priority;
-      if (patch.previousStatus !== undefined) dbPatch.previous_status = patch.previousStatus;
+      if (patch.priority !== undefined) { dbPatch.priority = patch.priority; localPatch.priority = patch.priority; }
+      if (patch.previousStatus !== undefined) { dbPatch.previous_status = patch.previousStatus; localPatch.previousStatus = patch.previousStatus; }
+      if (Object.keys(dbPatch).length === 0) return;
+      // Shown right away rather than after the save returns: on a slow connection (a phone on 4G) waiting
+      // for the round trip left a just-completed task sitting on screen for seconds. If the save fails the
+      // previous values are put back.
+      setRawTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...localPatch } : t)));
       const { error } = await supabase.from("tasks").update(dbPatch).eq("id", id);
+      if (error && taskBeforeUpdate) {
+        const before = taskBeforeUpdate as unknown as Record<string, unknown>;
+        const revert: Record<string, unknown> = {};
+        for (const key of Object.keys(localPatch)) revert[key] = before[key];
+        setRawTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...revert } : t)));
+      }
       if (reportIfError(error, "עדכון המשימה")) return;
 
       // Status pushes go only to the task's own assignees — never to every manager in the system,
       // and never to whoever made the change themselves.
-      if (patch.status !== undefined && taskBeforeUpdate) {
+      if (statusChanged && patch.status !== undefined && taskBeforeUpdate) {
         const recipients = (patch.assigneeIds ?? taskBeforeUpdate.assigneeIds).filter((uid) => uid !== actorId);
         for (const uid of recipients) {
           sendPush(
@@ -792,21 +906,65 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   }, [sendPush, reportIfError, findMember, logActivity]);
 
   const deleteTask: TaskStoreValue["deleteTask"] = useCallback((id, scope) => {
+    // Deleting a task removes its attachment rows (cascade) but not the stored files themselves, which
+    // stayed reachable by their public link. Collect them first, then delete each one that no remaining
+    // task still uses (a recurring series shares one stored file). Best-effort: a failure here never
+    // undoes the deletion — a leftover file is harmless next to a task that won't go away.
+    const fileUrlsOf = async (taskIds: string[]) => {
+      if (taskIds.length === 0) return [];
+      const { data } = await supabase.from("task_attachments").select("file_url").in("task_id", taskIds);
+      return Array.from(new Set(((data ?? []) as { file_url: string }[]).map((r) => r.file_url)));
+    };
+    const removeUnusedFiles = async (urls: string[]) => {
+      for (const url of urls) {
+        const { count, error } = await supabase
+          .from("task_attachments")
+          .select("id", { count: "exact", head: true })
+          .eq("file_url", url);
+        if (!error && count === 0) await removeTaskAttachmentFile(url);
+      }
+    };
+
     (async () => {
       if (scope === "series") {
         const target = rawTasksRef.current.find((t) => t.id === id);
         if (target?.recurrenceId) {
+          const { data: seriesRows } = await supabase.from("tasks").select("id").eq("recurrence_id", target.recurrenceId);
+          const urls = await fileUrlsOf(((seriesRows ?? []) as { id: string }[]).map((r) => r.id));
           const { error } = await supabase.from("tasks").delete().eq("recurrence_id", target.recurrenceId);
           if (reportIfError(error, "מחיקת הסדרה")) return;
           showToast("הסדרה החוזרת בוטלה");
+          await removeUnusedFiles(urls);
           return;
         }
       }
+      const urls = await fileUrlsOf([id]);
       const { error } = await supabase.from("tasks").delete().eq("id", id);
       if (reportIfError(error, "מחיקת המשימה")) return;
       showToast("המשימה נמחקה");
+      await removeUnusedFiles(urls);
     })();
   }, [reportIfError, showToast]);
+
+  /** Managers who should hear about activity on a task: the super admin, and managers of the same
+   *  unit + department as any of its assignees. Never managers of unrelated units — a push carries
+   *  the task title and comment text, which those people have no reason to see. */
+  const managersForTask = useCallback((task: Pick<Task, "assigneeIds">, exceptUserId: string) => {
+    const assignees = task.assigneeIds
+      .map((id) => teamRef.current.find((m) => m.id === id))
+      .filter((m): m is TeamMember => Boolean(m));
+    return teamRef.current
+      .filter(
+        (m) =>
+          m.isManager &&
+          m.id !== exceptUserId &&
+          (m.isSuperAdmin ||
+            assignees.some(
+              (a) => a.brigade === m.brigade && (a.department ?? DEFAULT_DEPARTMENT) === (m.department ?? DEFAULT_DEPARTMENT)
+            ))
+      )
+      .map((m) => m.id);
+  }, []);
 
   const addComment: TaskStoreValue["addComment"] = useCallback((taskId, userId, text) => {
     (async () => {
@@ -817,11 +975,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // Dual-form regardless of role — see the identical note in createTasks above.
       await logActivity({ userId, taskId, taskTitle: task?.title ?? "", action: "הוסיף/ה הערה" });
       if (task) {
-        const managerIds = teamRef.current.filter((m) => m.isManager && m.id !== userId).map((m) => m.id);
+        const managerIds = managersForTask(task, userId);
         sendPush(managerIds, `הערה חדשה מ${commenter?.name ?? ""}`, `"${task.title}": ${text}`, "/manager");
       }
     })();
-  }, [findMember, logActivity, sendPush, reportIfError]);
+  }, [findMember, logActivity, sendPush, reportIfError, managersForTask]);
 
   const addAttachment: TaskStoreValue["addAttachment"] = useCallback((taskId, uploadedBy, file) => {
     (async () => {
@@ -838,11 +996,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (reportIfError(error, "העלאת הקובץ")) return;
       await logActivity({ userId: uploadedBy, taskId, taskTitle: task?.title ?? "", action: `צירף/ה קובץ (${file.fileName})` });
       if (task) {
-        const managerIds = teamRef.current.filter((m) => m.isManager && m.id !== uploadedBy).map((m) => m.id);
+        const managerIds = managersForTask(task, uploadedBy);
         sendPush(managerIds, `קובץ חדש מ${uploader?.name ?? ""}`, `"${task.title}": ${file.fileName}`, "/manager");
       }
     })();
-  }, [findMember, logActivity, sendPush, reportIfError]);
+  }, [findMember, logActivity, sendPush, reportIfError, managersForTask]);
 
   const removeAttachment: TaskStoreValue["removeAttachment"] = useCallback((attachmentId) => {
     (async () => {
@@ -854,7 +1012,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (reportIfError(fetchError, "מחיקת הקובץ")) return;
       const { error } = await supabase.from("task_attachments").delete().eq("id", attachmentId);
       if (reportIfError(error, "מחיקת הקובץ")) return;
-      if (data?.file_url) await removeTaskAttachmentFile(data.file_url as string);
+      if (data?.file_url) {
+        // A file attached while creating a recurring series is stored once and shared by every instance —
+        // only delete the stored file when no other task still uses it.
+        const { count, error: countError } = await supabase
+          .from("task_attachments")
+          .select("id", { count: "exact", head: true })
+          .eq("file_url", data.file_url as string);
+        // If the check itself failed, keep the file: a leftover file is harmless, a missing shared one is not.
+        if (!countError && count === 0) await removeTaskAttachmentFile(data.file_url as string);
+      }
     })();
   }, [reportIfError]);
 
@@ -938,6 +1105,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         .select("id, assignee_ids")
         .contains("assignee_ids", [id]);
       if (reportIfError(fetchError, "הסרת החייל/ת")) return;
+
+      // task_attachments.uploaded_by has no ON DELETE rule, so a leftover upload by this person would
+      // make the final delete fail AFTER their tasks were already changed. Detach the uploads first
+      // (the file stays on its task; it just no longer names an uploader).
+      const { error: detachError } = await supabase.from("task_attachments").update({ uploaded_by: null }).eq("uploaded_by", id);
+      if (reportIfError(detachError, "הסרת החייל/ת")) return;
 
       if (affected) {
         for (const row of affected as { id: string; assignee_ids: string[] }[]) {

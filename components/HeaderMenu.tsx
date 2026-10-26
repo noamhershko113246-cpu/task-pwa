@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { MoreVertical, X, Accessibility, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { useDialog } from "@/lib/useDialog";
+import { SHEET_SPRING } from "@/lib/motion";
 
 export interface HeaderMenuItem {
   key: string;
@@ -49,7 +50,7 @@ export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white dark:bg-surface-dark-card shadow-soft"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full glass shadow-soft"
         aria-label="עוד פעולות"
         title="עוד פעולות"
         aria-haspopup="dialog"
@@ -76,7 +77,7 @@ export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 32, stiffness: 320 }}
+              transition={SHEET_SPRING}
               className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-4 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-sm md:rounded-3xl"
             >
               <div className="flex justify-center pb-2">

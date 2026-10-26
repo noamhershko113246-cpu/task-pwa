@@ -1,7 +1,8 @@
 "use client";
 
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Plus, ShieldCheck } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
@@ -26,8 +27,26 @@ function ManagerHistoryInner() {
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const detailTask = detailTaskId ? tasks.find((t) => t.id === detailTaskId) ?? null : null;
-  const session = getSession();
-  const me = team.find((m) => m.id === session?.userId);
+  const router = useRouter();
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const me = team.find((m) => m.id === sessionUserId);
+
+  // Same auth guard as the other manager pages (without it a logged-out visitor sat on the
+  // loading screen forever, and a soldier got a "manager" history page).
+  useEffect(() => {
+    if (loading) return;
+    const session = getSession();
+    if (!session) {
+      router.replace("/login");
+      return;
+    }
+    const sessionMember = team.find((m) => m.id === session.userId);
+    if (!sessionMember?.isManager && !sessionMember?.isSuperAdmin) {
+      router.replace(`/staff/history?user=${session.userId}`);
+      return;
+    }
+    setSessionUserId(session.userId);
+  }, [router, team, loading]);
 
   if (loading || !me) return <LoadingScreen />;
 
@@ -119,10 +138,11 @@ function ManagerHistoryInner() {
         onClose={() => setCreateOpen(false)}
         team={assignableTeam}
         currentUserId={me.id}
-        onCreate={(newTasks, categoryId, steps) =>
+        onCreate={(newTasks, categoryId, steps, files) =>
           createTasks(newTasks.map((t) => ({ ...t, createdBy: me.id })), {
             category: categoryId ? { userId: me.id, categoryId } : undefined,
             steps,
+            files,
           })
         }
       />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
 import { Check, Calendar, AlertCircle, Paperclip } from "lucide-react";
 import { Task, Category } from "@/lib/types";
@@ -10,6 +10,9 @@ import PriorityBadge from "./PriorityBadge";
 import { CategoryBadge } from "./CategoryChips";
 import StepProgress from "./StepProgress";
 import clsx from "clsx";
+import { DURATION, EASE } from "@/lib/motion";
+import { useLongPress } from "@/lib/useLongPress";
+import TaskActionMenu, { TaskActionMenuConfig } from "./TaskActionMenu";
 
 const SWIPE_THRESHOLD = 110;
 
@@ -19,6 +22,7 @@ export default function TaskCard({
   category,
   onComplete,
   onOpenDetail,
+  menu,
 }: {
   task: Task;
   creatorName?: string;
@@ -26,8 +30,16 @@ export default function TaskCard({
 
   onComplete: (taskId: string) => void;
   onOpenDetail?: (task: Task) => void;
+  /** Turns on the long-press / right-click menu (open, category, priority, complete). */
+  menu?: TaskActionMenuConfig;
 }) {
   const [completing, setCompleting] = useState(false);
+  // After the card has slid away, the space it took collapses — then the task is actually marked done.
+  const [collapsing, setCollapsing] = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const longPress = useLongPress(() => setMenuOpen(true), { enabled: Boolean(menu) && !completing });
   const fireConfetti = useConfetti();
   const x = useMotionValue(0);
   // Card is RTL: swiping to the right (positive x) completes the task.
@@ -39,7 +51,19 @@ export default function TaskCard({
     if (completing) return;
     setCompleting(true);
     fireConfetti(originYRatio ?? 0.5);
-    setTimeout(() => onComplete(task.id), 320);
+    const SLIDE_MS = 320;
+    const COLLAPSE_MS = 260;
+    timers.current.push(setTimeout(() => setCollapsing(true), SLIDE_MS));
+    timers.current.push(setTimeout(() => onComplete(task.id), SLIDE_MS + COLLAPSE_MS));
+    // If the task is still here a few seconds later (the save failed and was undone), bring the card back
+    // instead of leaving an invisible, collapsed row behind.
+    timers.current.push(
+      setTimeout(() => {
+        setCompleting(false);
+        setCollapsing(false);
+        x.set(0);
+      }, SLIDE_MS + COLLAPSE_MS + 3500)
+    );
   };
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
@@ -51,7 +75,12 @@ export default function TaskCard({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl">
+    <motion.div
+      initial={false}
+      animate={collapsing ? { height: 0, opacity: 0 } : { height: "auto", opacity: 1 }}
+      transition={{ duration: 0.26, ease: EASE }}
+      className="relative overflow-hidden rounded-2xl"
+    >
       {/* Reveal layer behind the card, shown while swiping */}
       <motion.div
         style={{ opacity: bgOpacity }}
@@ -69,11 +98,15 @@ export default function TaskCard({
         dragElastic={0.15}
         style={{ x }}
         onDragEnd={handleDragEnd}
-        animate={completing ? { opacity: 0, scale: 0.92, x: SWIPE_THRESHOLD + 40 } : {}}
-        transition={{ duration: 0.28 }}
+        animate={completing ? { opacity: 0, scale: 0.92, x: SWIPE_THRESHOLD + 40 } : { scale: longPress.pressing ? 0.985 : 1 }}
+        transition={{ duration: completing ? DURATION.slow : DURATION.base }}
+        {...(menu ? longPress.handlers : {})}
         className={clsx(
           "relative flex items-start gap-3 rounded-2xl border p-4 shadow-card",
-          "bg-white dark:bg-surface-dark-card border-zinc-100 dark:border-zinc-800"
+          // Semi-transparent + blurred (.glass, globals.css) so the personal background shows through.
+          "glass border-white/70 dark:border-zinc-700/60",
+          // A long press would otherwise start text selection / the browser's own menu (iPhone especially).
+          menu && "select-none [-webkit-touch-callout:none]"
         )}
       >
         {/* Big satisfying checkbox — also works as a tap-to-complete fallback */}
@@ -97,6 +130,14 @@ export default function TaskCard({
           className="min-w-0 flex-1"
           onClick={() => onOpenDetail?.(task)}
           role={onOpenDetail ? "button" : undefined}
+          // Reachable by keyboard: Enter opens the task, and the keyboard's menu key (or Shift+F10) opens the long-press menu.
+          tabIndex={onOpenDetail ? 0 : undefined}
+          onKeyDown={(e) => {
+            if (onOpenDetail && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              onOpenDetail(task);
+            }
+          }}
         >
           <h2 className="font-semibold text-ink dark:text-ink-dark leading-snug truncate">
             {task.title}
@@ -138,6 +179,17 @@ export default function TaskCard({
           </div>
         </div>
       </motion.div>
-    </div>
+
+      {menu && (
+        <TaskActionMenu
+          task={task}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          config={menu}
+          onOpenDetail={onOpenDetail}
+          onComplete={() => triggerComplete()}
+        />
+      )}
+    </motion.div>
   );
 }

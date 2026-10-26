@@ -2,6 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Accent color (Tailwind's brand-*), as "R G B". Default indigo; lib/adaptiveColors.ts overrides
+   these on <html> when "colors follow the background" is on. */
+:root {
+  --brand-50: 238 242 255;
+  --brand-100: 224 231 255;
+  --brand-300: 165 180 252;
+  --brand-400: 129 140 248;
+  --brand-500: 99 102 241;
+  --brand-600: 79 70 229;
+  --brand-700: 67 56 202;
+  /* How opaque the .glass cards are (0–1) — Settings → "שקיפות הכרטיסים", see lib/cardOpacity.ts. */
+  --glass-alpha: 0.55;
+}
+
+/* Cards and buttons that sit on top of a personal background: semi-transparent with a soft blur, so
+   the background shows through while the text stays readable. Used instead of bg-white /
+   dark:bg-surface-dark-card on the dashboards' cards (not on sheets/dialogs, and not on the main
+   "משימה חדשה" button). */
+@layer components {
+  .glass {
+    background-color: rgb(255 255 255 / var(--glass-alpha));
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .dark .glass {
+    background-color: rgb(35 35 39 / var(--glass-alpha));
+  }
+  /* The colored Wrapped card follows the same setting, a step more solid (white text on color). */
+  .wrapped-glass {
+    /* Over the light wash the color fades faster, so light mode keeps it a little more solid. */
+    --wrapped-alpha: min(1, calc(var(--glass-alpha) + 0.35));
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .dark .wrapped-glass {
+    --wrapped-alpha: min(1, calc(var(--glass-alpha) + 0.25));
+  }
+}
+
 html {
   direction: rtl;
   /* iOS otherwise re-scales text on rotation; also set on html so overflow can't leak past body. */
@@ -73,7 +112,7 @@ body {
 
 /* visible keyboard focus, always */
 :focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid rgb(var(--brand-500));
   outline-offset: 2px;
   border-radius: 0.5rem;
 }

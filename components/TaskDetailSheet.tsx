@@ -14,6 +14,7 @@ import TaskStepsChecklist from "./TaskStepsChecklist";
 import { useTaskStore } from "@/lib/store";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import clsx from "clsx";
+import { SHEET_SPRING } from "@/lib/motion";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "stuck", "done", "cancelled"];
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
@@ -222,7 +223,7 @@ export default function TaskDetailSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            transition={SHEET_SPRING}
             drag="y"
             dragListener={false}
             dragControls={dragControls}

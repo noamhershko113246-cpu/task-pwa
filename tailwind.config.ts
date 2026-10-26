@@ -30,15 +30,16 @@ const config: Config = {
           dark: "#f4f4f5",
           "dark-soft": "#a1a1aa",
         },
-        // accent
+        // accent — CSS variables (indigo by default, see globals.css) so the "colors follow the
+        // background" option (lib/adaptiveColors.ts) can swap the whole accent at runtime.
         brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
+          50: "rgb(var(--brand-50) / <alpha-value>)",
+          100: "rgb(var(--brand-100) / <alpha-value>)",
+          300: "rgb(var(--brand-300) / <alpha-value>)",
+          400: "rgb(var(--brand-400) / <alpha-value>)",
+          500: "rgb(var(--brand-500) / <alpha-value>)",
+          600: "rgb(var(--brand-600) / <alpha-value>)",
+          700: "rgb(var(--brand-700) / <alpha-value>)",
         },
         // unit-crest derived accents — used sparingly, as a ribbon/badge motif
         unit: {
@@ -78,10 +79,24 @@ const config: Config = {
           "0%": { transform: "scale(0.9)", opacity: "0" },
           "100%": { transform: "scale(1)", opacity: "1" },
         },
+        "route-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "bell-ring": {
+          "0%": { transform: "rotate(0deg)" },
+          "20%": { transform: "rotate(14deg)" },
+          "40%": { transform: "rotate(-12deg)" },
+          "60%": { transform: "rotate(8deg)" },
+          "80%": { transform: "rotate(-4deg)" },
+          "100%": { transform: "rotate(0deg)" },
+        },
       },
       animation: {
         "pulse-soft": "pulse-soft 2.2s ease-in-out infinite",
         "pop-in": "pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "route-in": "route-in 0.18s cubic-bezier(0.2, 0, 0, 1)",
+        "bell-ring": "bell-ring 0.5s ease-in-out",
       },
     },
   },
