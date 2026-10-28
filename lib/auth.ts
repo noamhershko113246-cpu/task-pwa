@@ -70,6 +70,8 @@ export function setSession(userId: string, remember: boolean) {
 export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
   window.sessionStorage.removeItem(SESSION_KEY);
+  // The data saved for instant opening (lib/store.tsx CACHE_KEY) belongs to this login too.
+  window.localStorage.removeItem("taskpwa_cache_v1");
 }
 
 /** Normalizes a phone number for comparison — strips spaces, dashes, and a leading +972. */

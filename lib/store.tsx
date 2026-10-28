@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 import { useToast } from "@/components/ToastProvider";
 import { removeTaskAttachmentFile, uploadTaskAttachment } from "./attachments";
 import { HQ_UNIT, OrgUnit, SEED_ORG_UNITS } from "./orgStructure";
+import { getSession } from "./auth";
 
 // Exported so the Settings UI can offer the exact same palette as a picker, instead of only
 // ever being assigned round-robin at creation time.
@@ -160,6 +161,41 @@ interface TaskCategoryRow {
   task_id: string;
   user_id: string;
   category_id: string;
+}
+
+/** Every table the app loads, as raw rows (null = that table failed to load). */
+interface Snapshot {
+  team: TeamRow[] | null;
+  tasks: TaskRow[] | null;
+  comments: CommentRow[] | null;
+  attachments: AttachmentRow[] | null;
+  activity: ActivityRow[] | null;
+  orgUnits: OrgUnitRow[] | null;
+  orgDepts: OrgDepartmentRow[] | null;
+  categories: CategoryRow[] | null;
+  taskCategories: TaskCategoryRow[] | null;
+  steps: StepRow[] | null;
+}
+
+// The last complete load, kept on this device so the app opens instantly next time (then refreshes).
+// Cleared on logout (lib/auth.ts) so a shared phone doesn't keep the previous person's data on screen.
+const CACHE_KEY = "taskpwa_cache_v1";
+
+function readCachedSnapshot(): Snapshot | null {
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Snapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedSnapshot(snap: Snapshot) {
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(snap));
+  } catch {
+    // Storage full or blocked — the app simply loads from the network next time, as before.
+  }
 }
 
 /** taskCategories is keyed by task AND user — each person files a shared task under their own category. */
@@ -385,55 +421,75 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       supabase.from("task_steps").select("*").order("sort_order").order("created_at"),
     ]);
     if (!mountedRef.current) return;
-    // A silent background refresh that fails just keeps what is already on screen.
-    if (isInitial && (teamRes.error || tasksRes.error)) {
+    // A silent background refresh that fails just keeps what is already on screen. On a first load
+    // that was already filled from this device's saved copy, it is a background refresh too.
+    if (isInitial && !shownFromCacheRef.current && (teamRes.error || tasksRes.error)) {
       showToastRef.current("לא הצלחנו לטעון את הנתונים. בדקו את החיבור לאינטרנט ורעננו את הדף.", "error");
     }
-    if (teamRes.data) setTeam(teamRes.data.map(memberFromRow));
-    if (tasksRes.data) setRawTasks(tasksRes.data.map(taskFromRow));
-    if (commentsRes.data) {
-      const grouped: Record<string, Comment[]> = {};
-      for (const row of commentsRes.data as CommentRow[]) {
-        const c = commentFromRow(row);
-        (grouped[row.task_id] ??= []).push(c);
-      }
-      setCommentsByTask(grouped);
-    }
-    if (attachmentsRes.data) {
-      const grouped: Record<string, Attachment[]> = {};
-      for (const row of attachmentsRes.data as AttachmentRow[]) {
-        const a = attachmentFromRow(row);
-        (grouped[row.task_id] ??= []).push(a);
-      }
-      setAttachmentsByTask(grouped);
-    }
-    if (activityRes.data) setActivity((activityRes.data as ActivityRow[]).map(activityFromRow));
-    if (orgUnitsRes.data) setOrgUnitRows(orgUnitsRes.data as OrgUnitRow[]);
-    if (orgDeptsRes.data) setOrgDeptRows(orgDeptsRes.data as OrgDepartmentRow[]);
-    if (categoriesRes.data) setCategories((categoriesRes.data as CategoryRow[]).map(categoryFromRow));
-    if (taskCategoriesRes.data) {
-      const map: Record<string, string> = {};
-      for (const row of taskCategoriesRes.data as TaskCategoryRow[]) {
-        map[taskCategoryKey(row.task_id, row.user_id)] = row.category_id;
-      }
-      setTaskCategories(map);
-    }
-    if (stepsRes.data) {
-      const grouped: Record<string, TaskStep[]> = {};
-      for (const row of stepsRes.data as StepRow[]) {
-        (grouped[row.task_id] ??= []).push(stepFromRow(row));
-      }
-      setStepsByTask(grouped);
-    }
+    const snapshot: Snapshot = {
+      team: teamRes.data as Snapshot["team"],
+      tasks: tasksRes.data as Snapshot["tasks"],
+      comments: commentsRes.data as Snapshot["comments"],
+      attachments: attachmentsRes.data as Snapshot["attachments"],
+      activity: activityRes.data as Snapshot["activity"],
+      orgUnits: orgUnitsRes.data as Snapshot["orgUnits"],
+      orgDepts: orgDeptsRes.data as Snapshot["orgDepts"],
+      categories: categoriesRes.data as Snapshot["categories"],
+      taskCategories: taskCategoriesRes.data as Snapshot["taskCategories"],
+      steps: stepsRes.data as Snapshot["steps"],
+    };
+    applySnapshot(snapshot);
+    // Only a complete load is worth keeping for next time.
+    if (!Object.values(snapshot).some((v) => v === null)) saveCachedSnapshot(snapshot);
     setLoading(false);
   }, []);
 
+  // Fills every list from a set of database rows — the live load, or this device's saved copy of it.
+  const applySnapshot = (snap: Snapshot) => {
+    if (snap.team) setTeam(snap.team.map(memberFromRow));
+    if (snap.tasks) setRawTasks(snap.tasks.map(taskFromRow));
+    if (snap.comments) {
+      const grouped: Record<string, Comment[]> = {};
+      for (const row of snap.comments) (grouped[row.task_id] ??= []).push(commentFromRow(row));
+      setCommentsByTask(grouped);
+    }
+    if (snap.attachments) {
+      const grouped: Record<string, Attachment[]> = {};
+      for (const row of snap.attachments) (grouped[row.task_id] ??= []).push(attachmentFromRow(row));
+      setAttachmentsByTask(grouped);
+    }
+    if (snap.activity) setActivity(snap.activity.map(activityFromRow));
+    if (snap.orgUnits) setOrgUnitRows(snap.orgUnits);
+    if (snap.orgDepts) setOrgDeptRows(snap.orgDepts);
+    if (snap.categories) setCategories(snap.categories.map(categoryFromRow));
+    if (snap.taskCategories) {
+      const map: Record<string, string> = {};
+      for (const row of snap.taskCategories) map[taskCategoryKey(row.task_id, row.user_id)] = row.category_id;
+      setTaskCategories(map);
+    }
+    if (snap.steps) {
+      const grouped: Record<string, TaskStep[]> = {};
+      for (const row of snap.steps) (grouped[row.task_id] ??= []).push(stepFromRow(row));
+      setStepsByTask(grouped);
+    }
+  };
+
+  // Opening the app: show what this device saw last time IMMEDIATELY (for someone logged in), then
+  // replace it with fresh data as soon as it arrives — instead of a loading screen on every open.
+  const shownFromCacheRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
+    const cached = getSession() ? readCachedSnapshot() : null;
+    if (cached) {
+      applySnapshot(cached);
+      shownFromCacheRef.current = true;
+      setLoading(false);
+    }
     fetchAll(true);
     return () => {
       mountedRef.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchAll]);
 
   // Catch up after the app comes back to the foreground or the network returns.
@@ -615,7 +671,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const sendPush = useCallback((userIds: string[], title: string, body: string, url?: string) => {
+  // options.taskId: tapping the notification opens that task (its url carries ?task=). options.actions:
+  // the buttons offered when the notification is long-pressed / expanded (public/sw.js) —
+  // "assignee" = mark done / postpone to tomorrow, "watcher" = open the task.
+  const sendPush = useCallback((userIds: string[], title: string, body: string, url?: string, options?: { taskId?: string; actions?: "assignee" | "watcher" }) => {
     if (userIds.length === 0) return;
     // Push is best-effort — a failure here should never break the app or show
     // the user an error toast. But it used to fail 100% silently (no console
@@ -624,7 +683,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     fetch("/api/push/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIds, title, body, url }),
+      body: JSON.stringify({ userIds, title, body, url, taskId: options?.taskId, actions: options?.actions }),
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -789,7 +848,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
         // Group pushes by (recipient, self-assigned?) so someone getting 13 recurring
         // instances gets ONE push ("13 משימות חדשות"), not 13 separate notifications.
-        const pushGroups = new Map<string, { userId: string; isSelf: boolean; creatorName: string; url: string; count: number; lastTitle: string }>();
+        const pushGroups = new Map<string, { userId: string; isSelf: boolean; creatorName: string; url: string; count: number; lastTitle: string; lastTaskId: string }>();
         for (const row of createdRows) {
           const creator = row.created_by ? findMember(row.created_by) : undefined;
           for (const id of row.assignee_ids) {
@@ -803,6 +862,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
               url: `/staff?user=${id}`,
               count: (existing?.count ?? 0) + 1,
               lastTitle: row.title,
+              lastTaskId: row.id,
             });
           }
         }
@@ -812,7 +872,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             ? single ? "נוספה משימה חדשה" : "נוספו לך משימות"
             : single ? `קיבלת משימה מ${group.creatorName}` : `קיבלת משימות מ${group.creatorName}`;
           const body = single ? group.lastTitle : `${group.count} משימות חדשות`;
-          sendPush([group.userId], title, body, group.url);
+          // One task: the notification opens it and offers done / tomorrow. Several: opens the list.
+          if (single) {
+            sendPush([group.userId], title, body, `${group.url}&task=${group.lastTaskId}`, { taskId: group.lastTaskId, actions: "assignee" });
+          } else {
+            sendPush([group.userId], title, body, group.url);
+          }
         }
       }
     })();
@@ -864,12 +929,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // and never to whoever made the change themselves.
       if (statusChanged && patch.status !== undefined && taskBeforeUpdate) {
         const recipients = (patch.assigneeIds ?? taskBeforeUpdate.assigneeIds).filter((uid) => uid !== actorId);
+        const stillOpen = patch.status !== "done" && patch.status !== "cancelled";
         for (const uid of recipients) {
           sendPush(
             [uid],
             "עדכון סטטוס במשימה",
             `"${taskBeforeUpdate.title}" עודכנה ל: ${STATUS_LABELS[patch.status]}`,
-            `/staff?user=${uid}`
+            `/staff?user=${uid}&task=${id}`,
+            { taskId: id, actions: stillOpen ? "assignee" : "watcher" }
           );
         }
       }
@@ -891,13 +958,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             taskTitle: taskBeforeUpdate.title,
             action: `העביר/ה את המשימה ל${addedNames}`,
           });
-          const recipients = added.filter((aid) => aid !== actorId);
-          if (recipients.length > 0) {
+          // One push per person: each one's link opens the task on THEIR own page.
+          for (const uid of added.filter((aid) => aid !== actorId)) {
             sendPush(
-              recipients,
+              [uid],
               actor ? `קיבלת משימה מ${actor.name}` : "קיבלת משימה חדשה",
               taskBeforeUpdate.title,
-              `/staff?user=${recipients[0]}`
+              `/staff?user=${uid}&task=${id}`,
+              { taskId: id, actions: "assignee" }
             );
           }
         }
@@ -905,7 +973,68 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [sendPush, reportIfError, findMember, logActivity]);
 
+  // A deleted task disappears at once but is only really deleted a few seconds later, so the "ביטול" in
+  // the message can bring it back (instead of an "are you sure?" step on every delete). If the app goes
+  // to the background in the meantime, the deletion is carried out right away rather than lost.
+  const UNDO_DELETE_MS = 5000;
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const pendingDeleteTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
   const deleteTask: TaskStoreValue["deleteTask"] = useCallback((id, scope) => {
+    const target = rawTasksRef.current.find((t) => t.id === id);
+    // A whole recurring series is still confirmed in the task sheet, and deleted right away.
+    if (scope === "series" && target?.recurrenceId) {
+      deleteTaskNow(id, scope);
+      return;
+    }
+    const finish = () => {
+      pendingDeleteTimers.current.delete(id);
+      deleteTaskNow(id, "one");
+    };
+    setPendingDeleteIds((prev) => new Set(prev).add(id));
+    pendingDeleteTimers.current.set(id, setTimeout(finish, UNDO_DELETE_MS));
+    showToast(target ? `"${target.title}" נמחקה` : "המשימה נמחקה", "success", {
+      durationMs: UNDO_DELETE_MS,
+      action: {
+        label: "ביטול",
+        onClick: () => {
+          const timer = pendingDeleteTimers.current.get(id);
+          if (!timer) return; // already carried out
+          clearTimeout(timer);
+          pendingDeleteTimers.current.delete(id);
+          setPendingDeleteIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        },
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showToast]);
+
+  // Leaving the app (or locking the phone) carries out any delete still waiting for its undo window.
+  useEffect(() => {
+    const flush = () => {
+      for (const [id, timer] of pendingDeleteTimers.current) {
+        clearTimeout(timer);
+        pendingDeleteTimers.current.delete(id);
+        deleteTaskNow(id, "one");
+      }
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const deleteTaskNow = (id: string, scope: "one" | "series") => {
     // Deleting a task removes its attachment rows (cascade) but not the stored files themselves, which
     // stayed reachable by their public link. Collect them first, then delete each one that no remaining
     // task still uses (a recurring series shares one stored file). Best-effort: a failure here never
@@ -940,11 +1069,23 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       }
       const urls = await fileUrlsOf([id]);
       const { error } = await supabase.from("tasks").delete().eq("id", id);
-      if (reportIfError(error, "מחיקת המשימה")) return;
-      showToast("המשימה נמחקה");
+      const unhide = () =>
+        setPendingDeleteIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      if (error) {
+        unhide(); // the task is still there — show it again
+        reportIfError(error, "מחיקת המשימה");
+        return;
+      }
+      setRawTasks((prev) => prev.filter((t) => t.id !== id));
+      unhide();
       await removeUnusedFiles(urls);
     })();
-  }, [reportIfError, showToast]);
+  };
 
   /** Managers who should hear about activity on a task: the super admin, and managers of the same
    *  unit + department as any of its assignees. Never managers of unrelated units — a push carries
@@ -976,7 +1117,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       await logActivity({ userId, taskId, taskTitle: task?.title ?? "", action: "הוסיף/ה הערה" });
       if (task) {
         const managerIds = managersForTask(task, userId);
-        sendPush(managerIds, `הערה חדשה מ${commenter?.name ?? ""}`, `"${task.title}": ${text}`, "/manager");
+        sendPush(managerIds, `הערה חדשה מ${commenter?.name ?? ""}`, `"${task.title}": ${text}`, `/manager?task=${taskId}`, { taskId, actions: "watcher" });
       }
     })();
   }, [findMember, logActivity, sendPush, reportIfError, managersForTask]);
@@ -997,7 +1138,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       await logActivity({ userId: uploadedBy, taskId, taskTitle: task?.title ?? "", action: `צירף/ה קובץ (${file.fileName})` });
       if (task) {
         const managerIds = managersForTask(task, uploadedBy);
-        sendPush(managerIds, `קובץ חדש מ${uploader?.name ?? ""}`, `"${task.title}": ${file.fileName}`, "/manager");
+        sendPush(managerIds, `קובץ חדש מ${uploader?.name ?? ""}`, `"${task.title}": ${file.fileName}`, `/manager?task=${taskId}`, { taskId, actions: "watcher" });
       }
     })();
   }, [findMember, logActivity, sendPush, reportIfError, managersForTask]);
@@ -1362,13 +1503,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   const tasks = useMemo<Task[]>(
     () =>
-      rawTasks.map((t) => ({
-        ...t,
-        comments: commentsByTask[t.id] ?? [],
-        attachments: attachmentsByTask[t.id] ?? [],
-        steps: [...(stepsByTask[t.id] ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
-      })),
-    [rawTasks, commentsByTask, attachmentsByTask, stepsByTask]
+      rawTasks
+        // Deleted moments ago and still undoable — gone from every screen already.
+        .filter((t) => !pendingDeleteIds.has(t.id))
+        .map((t) => ({
+          ...t,
+          comments: commentsByTask[t.id] ?? [],
+          attachments: attachmentsByTask[t.id] ?? [],
+          steps: [...(stepsByTask[t.id] ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+        })),
+    [rawTasks, commentsByTask, attachmentsByTask, stepsByTask, pendingDeleteIds]
   );
 
   // Joins the two flat DB-shaped row lists into the app's OrgUnit[] shape. Falls back to the

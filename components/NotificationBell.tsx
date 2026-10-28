@@ -41,7 +41,7 @@ export default function NotificationBell({ userId }: { userId: string }) {
     return (
       <button
         onClick={() => showToast(pushUnsupportedReason(), "error")}
-        className="flex h-11 w-11 items-center justify-center rounded-full glass shadow-soft"
+        className="flex h-11 w-11 items-center justify-center press rounded-full glass shadow-soft"
         aria-label="התראות לא זמינות במכשיר הזה"
         title="התראות לא זמינות במכשיר הזה"
       >
@@ -96,7 +96,7 @@ export default function NotificationBell({ userId }: { userId: string }) {
       <button
         onClick={handleClick}
         disabled={busy}
-        className="flex h-11 w-11 items-center justify-center rounded-full glass shadow-soft disabled:opacity-60"
+        className="flex h-11 w-11 items-center justify-center press rounded-full glass shadow-soft disabled:opacity-60"
         aria-label={title}
         aria-pressed={state === "on"}
         title={title}

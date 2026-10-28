@@ -15,11 +15,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "VAPID keys not configured" }, { status: 500 });
   }
 
-  const { userIds, title, body, url } = (await req.json()) as {
+  const { userIds, title, body, url, taskId, actions } = (await req.json()) as {
     userIds: string[];
     title: string;
     body: string;
     url?: string;
+    taskId?: string; // the task this notification is about (opened on tap)
+    actions?: "assignee" | "watcher"; // which quick buttons the notification offers — see public/sw.js
   };
 
   if (!userIds?.length || !title || !body) {
@@ -35,7 +37,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sent: 0 });
   }
 
-  const payload = JSON.stringify({ title, body, url: url || "/" });
+  const payload = JSON.stringify({
+    title,
+    body,
+    url: url || "/",
+    ...(taskId ? { taskId } : {}),
+    ...(actions === "assignee" || actions === "watcher" ? { actions } : {}),
+  });
 
   const results = await Promise.allSettled(
     subs.map((sub) =>

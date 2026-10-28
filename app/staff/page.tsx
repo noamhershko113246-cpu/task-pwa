@@ -10,6 +10,8 @@ import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession, clearSession } from "@/lib/auth";
 import { disablePushOnLogout } from "@/lib/push";
 import { useTaskStore } from "@/lib/store";
+import { useScrollMemory } from "@/lib/useScrollMemory";
+import { useTaskDeepLink } from "@/lib/useTaskDeepLink";
 import { useWhatsNew } from "@/components/WhatsNewProvider";
 import TaskCard from "@/components/TaskCard";
 import EmptyState from "@/components/EmptyState";
@@ -60,11 +62,17 @@ function StaffDashboardInner() {
       return;
     }
     const sessionMember = team.find((m) => m.id === s.userId);
+    // Opened as plain /staff (the home-screen app's start page, or an old shortcut): a manager's home
+    // is the command dashboard — that is where she creates tasks — not her own personal list.
+    if (!searchParams.get("user") && (sessionMember?.isManager || sessionMember?.isSuperAdmin)) {
+      router.replace("/manager");
+      return;
+    }
     const allowed = Boolean(sessionMember && getVisibleScope(sessionMember, team).some((m) => m.id === userId));
     if (!allowed) {
       router.replace(`/staff?user=${s.userId}`);
     }
-  }, [router, userId, team, loading]);
+  }, [router, userId, team, loading, searchParams]);
 
   const viewingAsManager = Boolean(session && session.userId !== userId);
   // Back goes to whatever "home" actually is for the viewer — the manager dashboard for a
@@ -115,6 +123,10 @@ function StaffDashboardInner() {
     return base;
   }, [tasks, query, priorityFilter, categoryFilter, getTaskCategory, categoryOwnerId]);
 
+  useScrollMemory(`staff:${userId}`, !loading && !!member);
+  // A notification opened the app on one of these tasks (?task=, maybe with &do=complete/snooze).
+  useTaskDeepLink({ ready: !loading && !!member && !!session, tasks, actorId: session?.userId, openTask: setDetailTaskId, updateTask });
+
   if (loading || !member) return <LoadingScreen />;
 
   const viewerMember = team.find((m) => m.id === session?.userId) ?? member;
@@ -161,7 +173,7 @@ function StaffDashboardInner() {
         {backHref ? (
           <a
             href={backHref}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full glass shadow-soft"
+            className="flex h-11 w-11 shrink-0 items-center justify-center press rounded-full glass shadow-soft"
             aria-label="חזרה"
           >
             <ChevronRight size={18} className="text-ink-soft" />
@@ -174,7 +186,7 @@ function StaffDashboardInner() {
             {(member.isManager || member.isSuperAdmin) && (
               <a
                 href="/manager"
-                className="flex h-11 w-11 items-center justify-center rounded-full glass shadow-soft"
+                className="flex h-11 w-11 items-center justify-center press rounded-full glass shadow-soft"
                 aria-label="חזרה ללוח פיקוד"
                 title="חזרה ללוח פיקוד"
               >

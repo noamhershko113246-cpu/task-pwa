@@ -12,6 +12,16 @@ import { CategoryPicker } from "./CategoryChips";
 import { ATTACHMENT_ACCEPT, MAX_FILES_ON_CREATE, validateAttachmentFile, formatFileSize } from "@/lib/attachments";
 import clsx from "clsx";
 import { DURATION, SHEET_SPRING } from "@/lib/motion";
+import DeadlineShortcuts from "./DeadlineShortcuts";
+import { keepFocusedFieldVisible } from "@/lib/keepFocusedFieldVisible";
+
+// The last choices made in this sheet (who, how urgent, which category), per person AND per screen —
+// a commander creating on a soldier's page shouldn't get the assignees she picked on the dashboard.
+type RememberedChoices = { assigneeIds: string[]; priority: Priority; categoryId: string | null };
+const rememberKey = (userId: string) => {
+  const params = new URLSearchParams(window.location.search);
+  return `taskpwa_last_create:${userId}:${window.location.pathname}:${params.get("user") ?? ""}`;
+};
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
 
@@ -80,11 +90,14 @@ export default function CreateTaskSheet({
     setFileError(problems.length > 0 ? problems.join(" · ") : null);
   };
 
+  const stepInputRef = useRef<HTMLInputElement>(null);
   const addStep = () => {
     const title = newStep.trim();
     if (!title || steps.length >= MAX_STEPS) return;
     setSteps((prev) => [...prev, title]);
     setNewStep("");
+    // Stay in the field (keyboard open) so the next step can be typed right away.
+    stepInputRef.current?.focus();
   };
 
   const moveStep = (index: number, dir: -1 | 1) => {
@@ -110,6 +123,35 @@ export default function CreateTaskSheet({
   // e.g. when a manager opens a task sheet from someone else's page.
   const myMember = currentUserId ? assignable.find((m) => m.id === currentUserId) : undefined;
   const onlyMe = !!myMember && assigneeIds.size === 1 && assigneeIds.has(myMember.id);
+
+  // Opening the sheet starts from the last choices made here (only ones that are still valid: people who
+  // can still be picked, a category that still exists). Everything stays editable.
+  useEffect(() => {
+    if (!open || !currentUserId) return;
+    try {
+      const raw = window.localStorage.getItem(rememberKey(currentUserId));
+      if (!raw) return;
+      const saved = JSON.parse(raw) as RememberedChoices;
+      const validIds = saved.assigneeIds.filter((id) => assignable.some((m) => m.id === id));
+      if (validIds.length > 0) setAssigneeIds(new Set(validIds));
+      if ([1, 2, 3, 4, 5].includes(saved.priority)) setPriority(saved.priority);
+      if (saved.categoryId && myCategories.some((c) => c.id === saved.categoryId)) setCategoryId(saved.categoryId);
+    } catch {
+      // nothing remembered (or storage blocked) — start empty, as before
+    }
+    // Only when the sheet opens — not while someone is already changing the choices.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const rememberChoices = () => {
+    if (!currentUserId) return;
+    try {
+      const choices: RememberedChoices = { assigneeIds: Array.from(assigneeIds), priority, categoryId };
+      window.localStorage.setItem(rememberKey(currentUserId), JSON.stringify(choices));
+    } catch {
+      // storage blocked — next time just starts empty
+    }
+  };
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => {
@@ -174,6 +216,7 @@ export default function CreateTaskSheet({
     } else {
       onCreate([{ ...base, deadline: deadline ? new Date(deadline).toISOString() : null }], categoryId, finalSteps, files);
     }
+    rememberChoices();
     handleClose();
   };
 
@@ -208,6 +251,7 @@ export default function CreateTaskSheet({
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(88dvh - ${keyboard}px)` } : undefined}
+            onFocusCapture={keepFocusedFieldVisible}
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
@@ -336,6 +380,7 @@ export default function CreateTaskSheet({
                     </button>
                   )}
                 </div>
+                {!isRecurring && <DeadlineShortcuts value={deadline} onPick={setDeadline} />}
                 {!isRecurring && !deadline && (
                   <p className="mt-1.5 text-xs text-ink-soft dark:text-ink-dark-soft">
                     אפשר להשאיר ריק אם אין דדליין קבוע
@@ -409,6 +454,7 @@ export default function CreateTaskSheet({
                 {steps.length < MAX_STEPS ? (
                   <div className="flex gap-2">
                     <input
+                      ref={stepInputRef}
                       value={newStep}
                       maxLength={MAX_STEP_LENGTH}
                       onChange={(e) => setNewStep(e.target.value)}
@@ -425,6 +471,8 @@ export default function CreateTaskSheet({
                     <button
                       type="button"
                       onClick={addStep}
+                      // Keeps the keyboard up: without this, tapping the button takes focus from the field first.
+                      onPointerDown={(e) => e.preventDefault()}
                       disabled={!newStep.trim()}
                       className="flex shrink-0 items-center gap-1 rounded-2xl bg-brand-600 px-3.5 text-xs font-bold text-white disabled:opacity-40"
                     >

@@ -1,18 +1,26 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Undo2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DURATION } from "@/lib/motion";
+
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
 
 interface ToastItem {
   id: string;
   message: string;
   type: "success" | "error";
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type?: "success" | "error") => void;
+  /** `options.action`: a button in the message (e.g. "ביטול" to undo) — tapping it closes the message.
+   *  `options.durationMs`: how long it stays (default 4s). */
+  showToast: (message: string, type?: "success" | "error", options?: { action?: ToastAction; durationMs?: number }) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -20,13 +28,13 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+  const dismiss = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
+
+  const showToast = useCallback<ToastContextValue["showToast"]>((message, type = "success", options) => {
     const id = `t${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
+    setToasts((prev) => [...prev, { id, message, type, action: options?.action }]);
+    setTimeout(() => dismiss(id), options?.durationMs ?? 4000);
+  }, [dismiss]);
 
   return (
     <ToastContext.Provider value={{ showToast }}>
@@ -51,6 +59,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
               )}
               <span className="min-w-0 flex-1">{t.message}</span>
+              {t.action && (
+                <button
+                  onClick={() => {
+                    t.action?.onClick();
+                    dismiss(t.id);
+                  }}
+                  className="press flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold hover:bg-white/25"
+                >
+                  <Undo2 size={13} />
+                  {t.action.label}
+                </button>
+              )}
             </motion.div>
           ))}
         </AnimatePresence>

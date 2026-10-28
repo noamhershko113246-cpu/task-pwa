@@ -8,6 +8,7 @@ import { ChevronRight, Lock, Eye } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
+import { useScrollMemory } from "@/lib/useScrollMemory";
 import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
 import MonthHistory from "@/components/MonthHistory";
@@ -48,6 +49,8 @@ function StaffHistoryInner() {
     setAllowed(ok);
     if (!ok) router.replace(`/staff/history?user=${s.userId}`);
   }, [router, userId, team, loading]);
+
+  useScrollMemory(`staff-history:${userId}`, !loading && !!member && allowed);
 
   if (loading || !member || !allowed) return <LoadingScreen />;
 

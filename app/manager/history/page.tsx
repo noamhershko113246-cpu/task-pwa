@@ -8,6 +8,7 @@ import { ChevronRight, Plus, ShieldCheck } from "lucide-react";
 import { Priority, getVisibleScope } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { useTaskStore } from "@/lib/store";
+import { useScrollMemory } from "@/lib/useScrollMemory";
 import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
 import MonthHistory from "@/components/MonthHistory";
@@ -47,6 +48,8 @@ function ManagerHistoryInner() {
     }
     setSessionUserId(session.userId);
   }, [router, team, loading]);
+
+  useScrollMemory("manager-history", !loading && !!me);
 
   if (loading || !me) return <LoadingScreen />;
 

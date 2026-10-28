@@ -10,6 +10,8 @@ import { formatDeadline, isOverdue, isToday, exportTasksToCsv, compareByDeadline
 import { getSession, clearSession } from "@/lib/auth";
 import { disablePushOnLogout } from "@/lib/push";
 import { useTaskStore } from "@/lib/store";
+import { useScrollMemory } from "@/lib/useScrollMemory";
+import { useTaskDeepLink } from "@/lib/useTaskDeepLink";
 import { useWhatsNew } from "@/components/WhatsNewProvider";
 import ProgressRing from "@/components/ProgressRing";
 import StatusBadge from "@/components/StatusBadge";
@@ -112,6 +114,10 @@ function ManagerDashboardInner() {
     }
     return [...results].sort(compareByDeadlineDesc);
   }, [visibleTasks, query, priorityFilter, categoryFilter, getTaskCategory, sessionUserId, isFiltering]);
+
+  useScrollMemory("manager", !loading && !!me);
+  // A notification (a comment or file on a soldier's task) opened the dashboard on that task (?task=).
+  useTaskDeepLink({ ready: !loading && !!me, tasks: visibleTasks, actorId: me?.id, openTask: setDetailTaskId, updateTask });
 
   if (loading || !me) return <LoadingScreen />;
 

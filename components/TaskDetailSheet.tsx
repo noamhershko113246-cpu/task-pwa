@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useId } from "react";
 import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
-import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2 } from "lucide-react";
+import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2, Check } from "lucide-react";
 import { useDialog } from "@/lib/useDialog";
 import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS, StepDraft } from "@/lib/types";
 import { canEditSteps } from "@/lib/utils";
@@ -14,7 +14,9 @@ import TaskStepsChecklist from "./TaskStepsChecklist";
 import { useTaskStore } from "@/lib/store";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import clsx from "clsx";
-import { SHEET_SPRING } from "@/lib/motion";
+import { DURATION, EASE, SHEET_SPRING, takeRecentTapY } from "@/lib/motion";
+import DeadlineShortcuts from "./DeadlineShortcuts";
+import { keepFocusedFieldVisible } from "@/lib/keepFocusedFieldVisible";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "stuck", "done", "cancelled"];
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
@@ -76,7 +78,17 @@ export default function TaskDetailSheet({
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [commentText, setCommentText] = useState("");
-  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState<string | null>(null); // name of the file being uploaded
+  // "נשמר" flash in the header after a field saved itself (status / priority / deadline / category).
+  const [savedFlash, setSavedFlash] = useState(0);
+  const flashSaved = () => setSavedFlash((n) => n + 1);
+  useEffect(() => {
+    if (!savedFlash) return;
+    const t = setTimeout(() => setSavedFlash(0), 1400);
+    return () => clearTimeout(t);
+  }, [savedFlash]);
+  // Where the sheet grows from: the spot that was just tapped (the task's card), when there is one.
+  const [originY, setOriginY] = useState<number | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragControls = useDragControls();
@@ -102,6 +114,9 @@ export default function TaskDetailSheet({
       setBaselineCategoryId(myCategoryId);
       setDraftSteps(savedSteps);
       setBaselineSteps(savedSteps);
+      // Phones only — on wide screens the sheet is a centered card, not a bottom sheet.
+      const tapY = takeRecentTapY();
+      setOriginY(window.innerWidth < 768 ? tapY : null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id]);
@@ -150,6 +165,37 @@ export default function TaskDetailSheet({
     onClose();
   };
 
+  // Status, priority, deadline and the personal category save the moment they're changed — the
+  // things people change most often shouldn't need a separate "save". The save button is for the
+  // text fields, the assignees and the step list.
+  const saveStatus = (s: TaskStatus) => {
+    setStatus(s);
+    if (!task || s === task.status) return;
+    onUpdate(task.id, { status: s, ...(s === "done" && task.status !== "done" ? { previousStatus: task.status } : {}) });
+    flashSaved();
+  };
+  const savePriority = (p: Priority) => {
+    setPriority(p);
+    if (!task || p === task.priority) return;
+    onUpdate(task.id, { priority: p });
+    flashSaved();
+  };
+  const saveDeadline = (value: string) => {
+    setDeadline(value);
+    if (!task) return;
+    const iso = value ? new Date(value).toISOString() : null;
+    if (iso === (task.deadline ?? null)) return;
+    onUpdate(task.id, { deadline: iso });
+    flashSaved();
+  };
+  const saveCategory = (id: string | null) => {
+    setDraftCategoryId(id);
+    if (!task || id === baselineCategoryId) return;
+    setTaskCategory(task.id, currentUserId, id);
+    setBaselineCategoryId(id);
+    flashSaved();
+  };
+
   const handleSave = (statusOverride?: TaskStatus) => {
     if (!task || !title.trim() || assigneeIds.size === 0) return;
     const finalStatus = statusOverride ?? status;
@@ -195,10 +241,10 @@ export default function TaskDetailSheet({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !task) return;
-    setUploadingFile(true);
+    setUploadingFile(file.name);
     setFileError(null);
     const result = await uploadTaskAttachment(task.id, file);
-    setUploadingFile(false);
+    setUploadingFile(null);
     if ("error" in result) {
       setFileError(result.error);
       return;
@@ -220,17 +266,24 @@ export default function TaskDetailSheet({
             className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
           />
           <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
+            // Opened by tapping a task: the sheet grows out of where that card was, so it's clear where
+            // it came from. Opened any other way (e.g. from a notification): it slides up as usual.
+            initial={originY !== null ? { opacity: 0, scale: 0.9, y: 0 } : { y: "100%" }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ y: "100%" }}
-            transition={SHEET_SPRING}
+            transition={originY !== null ? { duration: DURATION.slow, ease: EASE } : SHEET_SPRING}
             drag="y"
             dragListener={false}
             dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={handleDragEnd}
-            style={keyboard ? { bottom: keyboard, maxHeight: `calc(90dvh - ${keyboard}px)` } : undefined}
+            style={{
+              ...(keyboard ? { bottom: keyboard, maxHeight: `calc(90dvh - ${keyboard}px)` } : {}),
+              // The sheet's top sits ~10% down the screen; grow from the tapped point relative to that.
+              ...(originY !== null ? { transformOrigin: `50% ${Math.max(0, originY - window.innerHeight * 0.1)}px` } : {}),
+            }}
+            onFocusCapture={keepFocusedFieldVisible}
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
@@ -245,7 +298,25 @@ export default function TaskDetailSheet({
             </div>
 
             <div className="mb-5 flex items-center justify-between">
-              <h2 id={titleId} className="text-lg font-extrabold text-ink dark:text-ink-dark">פרטי משימה</h2>
+              <div className="flex items-center gap-2">
+                <h2 id={titleId} className="text-lg font-extrabold text-ink dark:text-ink-dark">פרטי משימה</h2>
+                <AnimatePresence>
+                  {savedFlash > 0 && (
+                    <motion.span
+                      key={savedFlash}
+                      role="status"
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: DURATION.fast }}
+                      className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                    >
+                      <Check size={11} strokeWidth={3} />
+                      נשמר
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
               <button
                 onClick={handleClose}
                 aria-label="סגירה"
@@ -351,6 +422,8 @@ export default function TaskDetailSheet({
                     type="datetime-local"
                     value={deadline}
                     onChange={(e) => setDeadline(e.target.value)}
+                    // Saved once the picker is done with (iOS reports every wheel turn as a change).
+                    onBlur={(e) => saveDeadline(e.target.value)}
                     onClick={(e) => {
                       try {
                         (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
@@ -363,7 +436,7 @@ export default function TaskDetailSheet({
                   {deadline && (
                     <button
                       type="button"
-                      onClick={() => setDeadline("")}
+                      onClick={() => saveDeadline("")}
                       aria-label="הסרת דדליין"
                       className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     >
@@ -371,6 +444,7 @@ export default function TaskDetailSheet({
                     </button>
                   )}
                 </div>
+                <DeadlineShortcuts value={deadline} onPick={saveDeadline} />
               </div>
 
               <div>
@@ -381,7 +455,7 @@ export default function TaskDetailSheet({
                     return (
                       <button
                         key={p}
-                        onClick={() => setPriority(p)}
+                        onClick={() => savePriority(p)}
                         className={clsx(
                           "flex-1 rounded-xl py-2.5 text-center text-xs font-bold transition-all active:scale-95",
                           priority === p ? "ring-2 ring-offset-1 ring-brand-400 dark:ring-offset-surface-dark-card" : "saturate-50"
@@ -404,7 +478,7 @@ export default function TaskDetailSheet({
                   <CategoryPicker
                     categories={myCategories}
                     value={draftCategoryId}
-                    onChange={setDraftCategoryId}
+                    onChange={saveCategory}
                   />
                   <p className="mt-1.5 text-xs text-ink-soft dark:text-ink-dark-soft">רק את/ה רואה את הקטגוריה הזו</p>
                 </div>
@@ -416,7 +490,7 @@ export default function TaskDetailSheet({
                   {STATUSES.map((s) => (
                     <button
                       key={s}
-                      onClick={() => setStatus(s)}
+                      onClick={() => saveStatus(s)}
                       className={clsx(
                         "rounded-full px-3.5 py-2 text-xs font-bold transition-all active:scale-95",
                         status === s
@@ -449,10 +523,11 @@ export default function TaskDetailSheet({
                 </button>
               )}
 
-              {/* Delete */}
+              {/* Delete — a single task goes right away with a few seconds to undo (see deleteTask in
+                  the store); only a recurring task still asks first, since it needs "this one or all". */}
               {!confirmingDelete ? (
                 <button
-                  onClick={() => setConfirmingDelete(true)}
+                  onClick={() => (task.recurrenceId ? setConfirmingDelete(true) : handleDelete("one"))}
                   className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-rose-200 dark:border-rose-500/30 py-3 text-sm font-bold text-rose-600 dark:text-rose-300 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
                 >
                   <Trash2 size={15} />
@@ -462,13 +537,13 @@ export default function TaskDetailSheet({
                 <div className="space-y-2 rounded-2xl border border-rose-200 dark:border-rose-500/30 bg-rose-50/60 dark:bg-rose-500/10 p-3.5">
                   <p className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-300">
                     <AlertTriangle size={13} />
-                    האם למחוק?
+                    משימה חוזרת — מה למחוק?
                   </p>
                   <button
                     onClick={() => handleDelete("one")}
                     className="w-full rounded-xl bg-rose-600 py-2.5 text-sm font-bold text-white active:scale-[0.98] transition-transform"
                   >
-                    {task.recurrenceId ? "מחיקת המשימה הזו בלבד" : "מחיקה"}
+                    מחיקת המשימה הזו בלבד
                   </button>
                   {task.recurrenceId && (
                     <button
@@ -552,13 +627,25 @@ export default function TaskDetailSheet({
                     })}
                   </div>
                 )}
+                {/* The file shows up in the list right away while it uploads, instead of only at the end. */}
+                {uploadingFile && (
+                  <div className="mb-2 flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2.5">
+                    <Loader2 size={18} className="shrink-0 animate-spin text-brand-600 dark:text-brand-300" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-ink dark:text-ink-dark">{uploadingFile}</p>
+                      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                        <div className="upload-progress h-full w-1/3 rounded-full bg-brand-500" />
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={handlePickFile}
-                  disabled={uploadingFile}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-600 py-2.5 text-xs font-semibold text-ink-soft dark:text-ink-dark-soft disabled:opacity-60"
+                  disabled={!!uploadingFile}
+                  className="press flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-600 py-2.5 text-xs font-semibold text-ink-soft dark:text-ink-dark-soft disabled:opacity-60"
                 >
-                  {uploadingFile ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
-                  {uploadingFile ? "מעלה..." : "הוספת קובץ או תמונה"}
+                  <Paperclip size={14} />
+                  הוספת קובץ או תמונה
                 </button>
                 <input
                   ref={fileInputRef}

@@ -50,7 +50,7 @@ export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full glass shadow-soft"
+        className="flex h-11 w-11 shrink-0 items-center justify-center press rounded-full glass shadow-soft"
         aria-label="עוד פעולות"
         title="עוד פעולות"
         aria-haspopup="dialog"
