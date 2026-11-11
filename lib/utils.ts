@@ -150,6 +150,8 @@ export function formatDeadline(iso: string | null): string {
   if (!iso) return "ללא דדליין";
   const d = new Date(iso);
   const datePart = d.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
+  // 23:59 is "end of that day" (the old default for quick deadlines) — the date alone says it.
+  if (d.getHours() === 23 && d.getMinutes() === 59) return datePart;
   const timePart = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
   return `${datePart}, ${timePart}`;
 }

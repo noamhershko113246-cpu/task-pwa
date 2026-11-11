@@ -48,7 +48,9 @@ export default function ProgressRing({
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="text-lg font-extrabold text-ink dark:text-ink-dark">{Math.round(percent)}%</span>
+        <span className={`${size <= 48 ? "text-[11px]" : "text-lg"} font-extrabold text-ink dark:text-ink-dark`}>
+          {Math.round(percent)}%
+        </span>
         {sublabel && <span className="text-[10px] text-ink-soft dark:text-ink-dark-soft">{sublabel}</span>}
       </div>
       {label && <span className="mt-1.5 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">{label}</span>}

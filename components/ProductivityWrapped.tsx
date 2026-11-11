@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion, PanInfo } from "framer-motion";
-import { Sparkles, Trophy, Clock3, TrendingUp, LucideIcon } from "lucide-react";
+import { Sparkles, Trophy, Clock3, TrendingUp, ChevronDown, ChevronUp, LucideIcon } from "lucide-react";
 import { Task } from "@/lib/types";
 import { computeWrappedStats } from "@/lib/insights";
 import { DURATION } from "@/lib/motion";
@@ -23,11 +23,50 @@ interface Slide {
   caption: string;
 }
 
+// Collapsed to one line by default so the tasks start higher on the screen; remembered per device.
+const OPEN_KEY = "wrapped-open";
+
 export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
   const stats = computeWrappedStats(tasks);
   const [slide, setSlide] = useState(0);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    try {
+      setOpen(window.localStorage.getItem(OPEN_KEY) === "1");
+    } catch {
+      // storage blocked — stays collapsed
+    }
+  }, []);
+  const toggleOpen = (next: boolean) => {
+    setOpen(next);
+    try {
+      window.localStorage.setItem(OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // storage blocked — applies for this visit only
+    }
+  };
 
   if (!stats.hasData) return null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => toggleOpen(true)}
+        aria-expanded={false}
+        className="press mb-4 flex min-h-11 w-full items-center gap-2 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass px-3.5 py-2.5 text-start shadow-card"
+      >
+        <Sparkles size={15} className="shrink-0 text-brand-600 dark:text-brand-300" />
+        <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink dark:text-ink-dark">
+          השבוע: {stats.thisWeekCount} משימות הושלמו
+        </span>
+        <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-ink-soft dark:text-ink-dark-soft">
+          עוד
+          <ChevronDown size={14} />
+        </span>
+      </button>
+    );
+  }
 
   const slides: Slide[] = [
     {
@@ -79,10 +118,21 @@ export default function ProductivityWrapped({ tasks }: { tasks: Task[] }) {
           backgroundImage: `linear-gradient(to bottom right, rgb(${current.gradient[0]} / var(--wrapped-alpha)), rgb(${current.gradient[1]} / var(--wrapped-alpha)))`,
         }}
       >
-        <p className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide">
-          <Sparkles size={13} />
-          Wrapped · הפרודוקטיביות שלך
-        </p>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide">
+            <Sparkles size={13} />
+            Wrapped · הפרודוקטיביות שלך
+          </p>
+          <button
+            type="button"
+            onClick={() => toggleOpen(false)}
+            aria-expanded={true}
+            aria-label="צמצום"
+            className="-m-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+          >
+            <ChevronUp size={16} />
+          </button>
+        </div>
 
         <AnimatePresence mode="wait">
           <motion.div

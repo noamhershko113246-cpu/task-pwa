@@ -13,6 +13,7 @@ import webpush from "npm:web-push@3.6.7";
 //   - "daily open-tasks summary" — opt-in per person, at a time of their own
 //     choosing (team_members.daily_summary_enabled/_time/_scope) — see
 //     runDailySummaries() below.
+// Neither is sent on Friday or Saturday (Israel time) — see Deno.serve at the bottom.
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -52,6 +53,9 @@ async function sendToUser(
 }
 
 const JERUSALEM_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Sunday 07:00 — when deadline reminders held over the weekend start going out again. */
+const SUNDAY_RESUME_MINUTES = 7 * 60;
 
 /** Current wall-clock time in Asia/Jerusalem, as minutes-since-midnight plus weekday index (0=Sun..6=Sat). */
 function jerusalemNow(now: Date): { hhmm: string; minutesSinceMidnight: number; weekday: number } {
@@ -258,10 +262,18 @@ Deno.serve(async () => {
 
   const sendResults: SendResult[] = [];
 
-  const deadlineRemindersSent = await runDeadlineReminders(supabase, now, nowMinutes, weekday, subsByUser, sendResults);
-  const dailySummariesSent = await runDailySummaries(supabase, now, todayKey, nowMinutes, subsByUser, sendResults);
+  // No automatic reminders on Friday and Saturday (Israel time) — for everyone, not only people who
+  // turned on working hours. Deadline reminders held over the weekend resume at 07:00 on Sunday rather
+  // than at midnight (they'd otherwise all arrive at once the minute Saturday ends). Notifications
+  // people trigger themselves (a task assigned, a comment) are sent from the app and aren't affected.
+  const weekend = weekday === 5 || weekday === 6;
+  const sundayBeforeResume = weekday === 0 && nowMinutes < SUNDAY_RESUME_MINUTES;
 
-  const result = { window: nowHHMM, deadlineRemindersSent, dailySummariesSent, sendResults };
+  const deadlineRemindersSent =
+    weekend || sundayBeforeResume ? 0 : await runDeadlineReminders(supabase, now, nowMinutes, weekday, subsByUser, sendResults);
+  const dailySummariesSent = weekend ? 0 : await runDailySummaries(supabase, now, todayKey, nowMinutes, subsByUser, sendResults);
+
+  const result = { window: nowHHMM, weekend, deadlineRemindersSent, dailySummariesSent, sendResults };
   console.log(JSON.stringify(result));
   return new Response(JSON.stringify(result), { status: 200, headers: { "Content-Type": "application/json" } });
 });

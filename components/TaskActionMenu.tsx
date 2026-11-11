@@ -2,13 +2,13 @@
 
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { Check, ChevronLeft, ChevronRight, FileText, Flag, Tag, X, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { Priority, PRIORITY_COLORS, Task } from "@/lib/types";
 import { useTaskStore } from "@/lib/store";
 import { useDialog } from "@/lib/useDialog";
-import { DURATION, SHEET_SPRING } from "@/lib/motion";
+import { DURATION, SHEET_SPRING, sheetDrag } from "@/lib/motion";
 import { CategoryBadge, CategoryPicker } from "./CategoryChips";
 
 export interface TaskActionMenuConfig {
@@ -51,6 +51,7 @@ export default function TaskActionMenu({
   useEffect(() => setMounted(true), []);
   const titleId = useId();
   const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const dragControls = useDragControls();
 
   // Always reopen on the main list, never on whichever sub-view was left open last time.
   useEffect(() => {
@@ -113,9 +114,10 @@ export default function TaskActionMenu({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={SHEET_SPRING}
+            {...sheetDrag(dragControls, onClose)}
             className="sheet-scroll fixed inset-x-0 bottom-0 z-[70] max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white px-4 pb-sheet pt-3 shadow-2xl dark:bg-surface-dark-card md:bottom-6 md:mx-auto md:max-w-sm md:rounded-3xl"
           >
-            <div className="flex justify-center pb-2">
+            <div onPointerDown={(e) => dragControls.start(e)} className="flex cursor-grab touch-none select-none justify-center pb-2 active:cursor-grabbing">
               <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
             </div>
 

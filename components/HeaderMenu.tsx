@@ -2,11 +2,11 @@
 
 import { useId, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { MoreVertical, X, Accessibility, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { useDialog } from "@/lib/useDialog";
-import { SHEET_SPRING } from "@/lib/motion";
+import { SHEET_SPRING, sheetDrag } from "@/lib/motion";
 
 export interface HeaderMenuItem {
   key: string;
@@ -24,8 +24,17 @@ export interface HeaderMenuItem {
  * nothing and the rightmost buttons ran off-screen). A bottom sheet of labeled rows always fits at
  * any width, and the labels are clearer than a row of bare icons.
  */
-export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
+export default function HeaderMenu({
+  items,
+  info,
+}: {
+  items: HeaderMenuItem[];
+  /** Who-am-I details (role, what I can see) shown above the actions — kept here rather than on the
+   *  page itself, where they took two lines above the tasks every single day. */
+  info?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
+  const dragControls = useDragControls();
 
   const dialogRef = useDialog<HTMLDivElement>(open, () => setOpen(false));
   const titleId = useId();
@@ -78,9 +87,10 @@ export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={SHEET_SPRING}
+              {...sheetDrag(dragControls, () => setOpen(false))}
               className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-4 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-sm md:rounded-3xl"
             >
-              <div className="flex justify-center pb-2">
+              <div onPointerDown={(e) => dragControls.start(e)} className="flex cursor-grab touch-none select-none justify-center pb-2 active:cursor-grabbing">
                 <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
               </div>
               <div className="mb-1 flex items-center justify-between px-1">
@@ -93,6 +103,8 @@ export default function HeaderMenu({ items }: { items: HeaderMenuItem[] }) {
                   <X size={18} />
                 </button>
               </div>
+
+              {info && <div className="mb-2 space-y-1.5 px-1">{info}</div>}
 
               <div className="space-y-0.5">
                 {items.map((item) => {

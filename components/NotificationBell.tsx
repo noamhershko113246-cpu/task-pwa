@@ -14,6 +14,7 @@ import {
 } from "@/lib/push";
 import { useToast } from "./ToastProvider";
 import { useDialog } from "@/lib/useDialog";
+import { PUSH_CHANGED_EVENT } from "./EnableNotificationsBanner";
 
 export default function NotificationBell({ userId }: { userId: string }) {
   const { showToast } = useToast();
@@ -30,8 +31,14 @@ export default function NotificationBell({ userId }: { userId: string }) {
   const titleId = useId();
 
   useEffect(() => {
-    getNotificationPermission().then(setPermission);
-    isPushSubscribed().then(setSubscribed);
+    const refresh = () => {
+      getNotificationPermission().then(setPermission);
+      isPushSubscribed().then(setSubscribed);
+    };
+    refresh();
+    // Turned on from the banner on the page (EnableNotificationsBanner) — reflect it here too.
+    window.addEventListener(PUSH_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PUSH_CHANGED_EVENT, refresh);
   }, []);
 
   // Used to render nothing here, which made the notification option silently vanish on any device

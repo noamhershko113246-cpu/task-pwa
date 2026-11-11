@@ -32,6 +32,7 @@ import { AnimatePresence } from "framer-motion";
 import ListItemMotion from "@/components/ListItemMotion";
 import NotificationBell from "@/components/NotificationBell";
 import HeaderMenu from "@/components/HeaderMenu";
+import EnableNotificationsBanner from "@/components/EnableNotificationsBanner";
 import SettingsSheet from "@/components/SettingsSheet";
 import AppBackground from "@/components/AppBackground";
 import AITriageSheet from "@/components/AITriageSheet";
@@ -158,6 +159,25 @@ function ManagerDashboardInner() {
         <div className="flex shrink-0 items-center gap-2">
           <NotificationBell userId={me.id} />
           <HeaderMenu
+            // Role and access note: here rather than as two lines above the dashboard every day.
+            info={
+              <>
+                <RoleBadge member={me} />
+                <p className="flex items-center gap-1.5 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+                  <ShieldCheck size={13} className="shrink-0" />
+                  {(() => {
+                    // No department === DEFAULT_DEPARTMENT special-case here on purpose — 'משא"ן' now
+                    // exists at both מפא"ג and חטיבה 10, so that check used to hide exactly the unit
+                    // info that tells those two isolated instances apart.
+                    const unit = me.department ? `${me.department}${me.brigade ? " · " + me.brigade : ""}` : "המשרד";
+                    if (me.isSuperAdmin) return "כ-Super Admin, יש לך גישה מלאה לכל המשימות והמשתמשים בכל היחידות";
+                    return me.isSuperManager
+                      ? `כמפקד/ת מחלקה, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
+                      : `כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי ${unit}`;
+                  })()}
+                </p>
+              </>
+            }
             items={[
               { key: "whats-new", label: "מה חדש", icon: Megaphone, onClick: openWhatsNew },
               { key: "settings", label: "הגדרות", icon: Settings, onClick: () => setSettingsOpen(true) },
@@ -172,23 +192,7 @@ function ManagerDashboardInner() {
         </div>
       </header>
 
-      <div className="mb-4">
-        <RoleBadge member={me} />
-      </div>
-
-      <p className="mb-4 flex items-center gap-1.5 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
-        <ShieldCheck size={13} />
-        {(() => {
-          // No department === DEFAULT_DEPARTMENT special-case here on purpose — 'משא"ן' now
-          // exists at both מפא"ג and חטיבה 10, so that check used to hide exactly the unit
-          // info that tells those two isolated instances apart.
-          const unit = me.department ? `${me.department}${me.brigade ? " · " + me.brigade : ""}` : "המשרד";
-          if (me.isSuperAdmin) return "כ-Super Admin, יש לך גישה מלאה לכל המשימות והמשתמשים בכל היחידות";
-          return me.isSuperManager
-            ? `כמפקד/ת מחלקה, יש לך גישה מלאה לכל המשימות של כולם ב${unit}, כולל שאר המפקדות`
-            : `כמפקד/ת, יש לך גישה מלאה לכל המשימות של כל אנשי ${unit}`;
-        })()}
-      </p>
+      <EnableNotificationsBanner userId={me.id} />
 
       <div className="mb-3 flex items-center gap-2">
         <div className="flex-1">
@@ -253,39 +257,37 @@ function ManagerDashboardInner() {
         </section>
       ) : (
         <>
-          {/* Shortcut to my own personal task list — placed above the managed list */}
-          <Link
-            href={`/staff?user=${me.id}`}
-            className={clsx(
-              "mb-6 flex items-center gap-4 rounded-2xl border p-4 shadow-card transition-transform active:scale-[0.98]",
-              myOpenCount === 0
-                ? "border-emerald-100 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10"
-                : "border-brand-100 dark:border-brand-500/20 bg-brand-50/[var(--glass-alpha)] backdrop-blur-[6px] dark:bg-brand-500/10"
-            )}
-          >
-            <ProgressRing percent={myPercent} size={56} strokeWidth={6} />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-ink dark:text-ink-dark">המשימות האישיות שלי</p>
-              <p className="text-xs text-ink-soft dark:text-ink-dark-soft">
-                {myOpenCount > 0 ? `${myOpenCount} משימות פתוחות` : "אין משימות פתוחות ✨"}
-              </p>
-            </div>
-          </Link>
+          {/* My own tasks + today's overall progress, side by side (they used to be two full-width
+              cards with big rings, which pushed the team and the overdue list below the fold). */}
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            <Link
+              href={`/staff?user=${me.id}`}
+              className={clsx(
+                "flex items-center gap-2.5 rounded-2xl border p-3 shadow-card transition-transform active:scale-[0.98]",
+                myOpenCount === 0
+                  ? "border-emerald-100 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10"
+                  : "border-brand-100 dark:border-brand-500/20 bg-brand-50/[var(--glass-alpha)] backdrop-blur-[6px] dark:bg-brand-500/10"
+              )}
+            >
+              <ProgressRing percent={myPercent} size={44} strokeWidth={5} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-ink dark:text-ink-dark">המשימות שלי</p>
+                <p className="truncate text-[11px] text-ink-soft dark:text-ink-dark-soft">
+                  {myOpenCount > 0 ? `${myOpenCount} פתוחות` : "אין פתוחות ✨"}
+                </p>
+              </div>
+            </Link>
 
-          {/* Overall progress */}
-          <section className="mb-5 flex items-center gap-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 glass p-5 shadow-card">
-            <ProgressRing percent={overallPercent} sublabel="הושלם" />
-            <div>
-              <p className="text-sm font-semibold text-ink dark:text-ink-dark">התקדמות כללית להיום</p>
-              <p className="mt-0.5 text-xs text-ink-soft dark:text-ink-dark-soft">
-                {todaysTotalCount === 0
-                  ? "אין משימות מתוזמנות להיום"
-                  : todaysTotalCount === 1
-                  ? `משימה ${todaysDoneCount} מתוך ${todaysTotalCount} הושלמה`
-                  : `${todaysDoneCount} מתוך ${todaysTotalCount} משימות הושלמו`}
-              </p>
-            </div>
-          </section>
+            <section className="flex items-center gap-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3 shadow-card">
+              <ProgressRing percent={overallPercent} size={44} strokeWidth={5} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-ink dark:text-ink-dark">התקדמות היום</p>
+                <p className="truncate text-[11px] text-ink-soft dark:text-ink-dark-soft">
+                  {todaysTotalCount === 0 ? "אין משימות להיום" : `${todaysDoneCount} מתוך ${todaysTotalCount}`}
+                </p>
+              </div>
+            </section>
+          </div>
 
           <ProductivityWrapped tasks={visibleTasks} />
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
+import { animate, motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
 import { Check, Calendar, AlertCircle, Paperclip } from "lucide-react";
 import { Task, Category } from "@/lib/types";
 import { formatDeadline, formatCreatedAt, isOverdue } from "@/lib/utils";
@@ -10,7 +10,7 @@ import PriorityBadge from "./PriorityBadge";
 import { CategoryBadge } from "./CategoryChips";
 import StepProgress from "./StepProgress";
 import clsx from "clsx";
-import { DURATION, EASE } from "@/lib/motion";
+import { DURATION, EASE, SHEET_SPRING, projectMomentum } from "@/lib/motion";
 import { useLongPress } from "@/lib/useLongPress";
 import TaskActionMenu, { TaskActionMenuConfig } from "./TaskActionMenu";
 
@@ -39,6 +39,9 @@ export default function TaskCard({
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Set while the card is being swiped. A mouse release after a swipe also fires a click (the drag-end
+  // callback only runs a frame later, after it), and that click must not open the task as well.
+  const swiping = useRef(false);
   const longPress = useLongPress(() => setMenuOpen(true), { enabled: Boolean(menu) && !completing });
   const fireConfetti = useConfetti();
   const x = useMotionValue(0);
@@ -67,10 +70,13 @@ export default function TaskCard({
   };
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.offset.x > SWIPE_THRESHOLD) {
+    swiping.current = false;
+    // Judged by where the swipe is heading, so a quick short flick completes too.
+    if (info.offset.x + projectMomentum(info.velocity.x, 0.99) > SWIPE_THRESHOLD) {
       triggerComplete();
     } else {
-      x.set(0);
+      // Springs back from where the finger let go, at its speed — not a jump back to the start.
+      animate(x, 0, { ...SHEET_SPRING, velocity: info.velocity.x });
     }
   };
 
@@ -97,6 +103,7 @@ export default function TaskCard({
         dragConstraints={{ left: 0, right: SWIPE_THRESHOLD + 40 }}
         dragElastic={0.15}
         style={{ x }}
+        onDragStart={() => (swiping.current = true)}
         onDragEnd={handleDragEnd}
         animate={completing ? { opacity: 0, scale: 0.92, x: SWIPE_THRESHOLD + 40 } : { scale: longPress.pressing ? 0.985 : 1 }}
         transition={{ duration: completing ? DURATION.slow : DURATION.base }}
@@ -128,7 +135,10 @@ export default function TaskCard({
 
         <div
           className="min-w-0 flex-1"
-          onClick={() => onOpenDetail?.(task)}
+          onClick={() => {
+            if (swiping.current) return;
+            onOpenDetail?.(task);
+          }}
           role={onOpenDetail ? "button" : undefined}
           // Reachable by keyboard: Enter opens the task, and the keyboard's menu key (or Shift+F10) opens the long-press menu.
           tabIndex={onOpenDetail ? 0 : undefined}

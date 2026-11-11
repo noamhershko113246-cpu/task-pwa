@@ -42,6 +42,7 @@ export default function StandInList({
   unitOrder: string[];
 }) {
   const [openUnits, setOpenUnits] = useState<Set<string>>(() => new Set(ownBrigade ? [ownBrigade] : []));
+  const [listOpen, setListOpen] = useState(false);
 
   const groups = new Map<string, TeamMember[]>();
   for (const m of targets) {
@@ -66,21 +67,39 @@ export default function StandInList({
 
   const flat = targets.length <= FLAT_LIST_MAX || orderedUnits.length === 1;
 
+  // A short list is one scrolling row (label + people); a long, grouped one (a super-admin's whole
+  // org) is a single collapsed line until opened — either way the tasks below start high on the screen.
+  if (flat) {
+    return (
+      <div className="no-scrollbar mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-2 shadow-card">
+        <span className="flex shrink-0 items-center gap-1 ps-1.5 text-[11px] font-bold text-ink-soft dark:text-ink-dark-soft">
+          <UserCog size={13} />
+          ממלא/ת מקום:
+        </span>
+        {targets.map((m) => (
+          <span key={m.id} className="shrink-0 whitespace-nowrap">
+            <PersonChip m={m} />
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-3.5 shadow-card">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink dark:text-ink-dark">
+    <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 glass p-2 shadow-card">
+      <button
+        onClick={() => setListOpen((v) => !v)}
+        aria-expanded={listOpen}
+        className="flex min-h-11 w-full items-center gap-1.5 rounded-xl px-1.5 text-xs font-bold text-ink dark:text-ink-dark"
+      >
         <UserCog size={13} className="text-ink-soft dark:text-ink-dark-soft" />
         ממלא/ת מקום עבור
-      </p>
+        <span className="font-medium text-ink-soft dark:text-ink-dark-soft">({targets.length})</span>
+        <ChevronDown size={14} className={clsx("ms-auto text-ink-soft transition-transform", !listOpen && "-rotate-90")} />
+      </button>
 
-      {flat ? (
-        <div className="flex flex-wrap gap-2">
-          {targets.map((m) => (
-            <PersonChip key={m.id} m={m} />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
+      {listOpen && (
+        <div className="mt-1 space-y-1.5">
           {orderedUnits.map((unit) => {
             const members = groups.get(unit)!;
             const open = openUnits.has(unit);

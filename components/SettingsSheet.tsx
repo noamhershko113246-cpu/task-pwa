@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useId } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { X, Settings, Sun, Moon, MonitorSmartphone, Image as ImageIcon, Trash2, Loader2, Clock, UserCog } from "lucide-react";
 import { useDialog } from "@/lib/useDialog";
 import { useTaskStore, AVATAR_COLORS } from "@/lib/store";
@@ -13,9 +13,10 @@ import { uploadAvatarPhoto, removeAvatarPhoto } from "@/lib/avatar";
 import { BACKGROUND_PRESETS } from "@/lib/backgroundPresets";
 import AdaptiveColorsSettings from "./AdaptiveColorsSettings";
 import CardOpacitySettings from "./CardOpacitySettings";
+import DeadlineTimeSettings from "./DeadlineTimeSettings";
 import Avatar from "./Avatar";
 import CategoriesSettings from "./CategoriesSettings";
-import { SHEET_SPRING } from "@/lib/motion";
+import { SHEET_SPRING, sheetDrag } from "@/lib/motion";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "לפי המערכת", icon: MonitorSmartphone },
@@ -42,6 +43,7 @@ export default function SettingsSheet({
   const { updateMember, team } = useTaskStore();
   const keyboard = useKeyboardInset(open);
   const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const dragControls = useDragControls();
   const titleId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -218,6 +220,7 @@ export default function SettingsSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={SHEET_SPRING}
+            {...sheetDrag(dragControls, onClose)}
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(85dvh - ${keyboard}px)` } : undefined}
             ref={dialogRef}
             role="dialog"
@@ -225,7 +228,7 @@ export default function SettingsSheet({
             aria-labelledby={titleId}
             className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
-            <div className="flex justify-center pb-3">
+            <div onPointerDown={(e) => dragControls.start(e)} className="flex cursor-grab touch-none select-none justify-center pb-3 active:cursor-grabbing">
               <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
             </div>
 
@@ -389,6 +392,8 @@ export default function SettingsSheet({
               <AdaptiveColorsSettings />
 
               <CardOpacitySettings member={member} />
+
+              <DeadlineTimeSettings />
 
               {/* Daily open-tasks reminder */}
               <section>

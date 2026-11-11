@@ -27,6 +27,7 @@ import CreateTaskSheet from "@/components/CreateTaskSheet";
 import LoadingScreen from "@/components/LoadingScreen";
 import NotificationBell from "@/components/NotificationBell";
 import HeaderMenu from "@/components/HeaderMenu";
+import EnableNotificationsBanner from "@/components/EnableNotificationsBanner";
 import StandInList from "@/components/StandInList";
 import SettingsSheet from "@/components/SettingsSheet";
 import AppBackground from "@/components/AppBackground";
@@ -194,6 +195,15 @@ function StaffDashboardInner() {
               </a>
             )}
             <HeaderMenu
+              info={
+                <>
+                  <RoleBadge member={member} />
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
+                    <Lock size={12} />
+                    מוצגות רק המשימות שלך
+                  </p>
+                </>
+              }
               items={[
                 { key: "whats-new", label: "מה חדש", icon: Megaphone, onClick: openWhatsNew },
                 { key: "settings", label: "הגדרות", icon: Settings, onClick: () => setSettingsOpen(true) },
@@ -208,25 +218,24 @@ function StaffDashboardInner() {
         )}
       </header>
 
-      <div className="mb-4">
-        <RoleBadge member={member} />
-      </div>
-
-      <p className="mb-4 flex items-center gap-1.5 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
-        {viewingAsManager ? (
-          <>
+      {/* On your own page the role and "only your tasks" note live in the ⋮ menu (they took two lines
+          above the tasks every day). Viewing someone else's page they stay here: whose tasks these
+          are, and that changes affect them, has to be in plain sight. */}
+      {viewingAsManager && (
+        <>
+          <div className="mb-4">
+            <RoleBadge member={member} />
+          </div>
+          <p className="mb-4 flex items-center gap-1.5 px-1 text-xs font-medium text-ink-soft dark:text-ink-dark-soft">
             <Eye size={12} />
             {sessionMemberForNav?.isManager || sessionMemberForNav?.isSuperAdmin
               ? `צופה/ת ועורכ/ת כמפקדת — שינויים כאן משפיעים על ${member.name}`
               : `ממלא/ת מקום — שינויים כאן משפיעים על ${member.name}`}
-          </>
-        ) : (
-          <>
-            <Lock size={12} />
-            מוצגות רק המשימות שלך
-          </>
-        )}
-      </p>
+          </p>
+        </>
+      )}
+
+      {!viewingAsManager && <EnableNotificationsBanner userId={member.id} />}
 
       {/* Stand-in access ("ממלא/ת מקום"): people this account was granted proxy access to, via
           their own Settings — shown only on your own page, not while already viewing someone
@@ -256,7 +265,7 @@ function StaffDashboardInner() {
 
       {openTasks.length > 0 && !isFiltering && (
         <p className="mb-3 px-1 text-sm font-medium text-ink-soft dark:text-ink-dark-soft">
-          {openTasks.length} משימות פתוחות · החליקו ימינה כדי לסמן כהושלם · הקישו על משימה לעריכה
+          {openTasks.length} משימות פתוחות · החליקו ימינה לסיום
         </p>
       )}
 

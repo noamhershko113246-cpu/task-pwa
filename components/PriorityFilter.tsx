@@ -2,6 +2,7 @@
 
 import { Priority, PRIORITY_COLORS } from "@/lib/types";
 import clsx from "clsx";
+import { priorityChipClass } from "./PriorityBadge";
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4, 5];
 
@@ -33,21 +34,21 @@ export default function PriorityFilter({
         הכל
       </button>
       {PRIORITIES.map((p) => {
-        const c = PRIORITY_COLORS[p];
         const active = selected.has(p);
         return (
           <button
             key={p}
             onClick={() => toggle(p)}
             aria-pressed={active}
-            className="shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition-all"
-            style={{
-              backgroundColor: active ? c.fg : c.bg,
-              color: active ? "#fff" : c.fg,
-              opacity: selected.size > 0 && !active ? 0.5 : 1,
-            }}
+            aria-label={`עדיפות ${p} — ${PRIORITY_COLORS[p].label}`}
+            title={PRIORITY_COLORS[p].label}
+            className={clsx(
+              "min-w-9 shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition-all",
+              priorityChipClass(p, active),
+              selected.size > 0 && !active && "opacity-50"
+            )}
           >
-            P{p}
+            {p <= 2 ? PRIORITY_COLORS[p].label : p}
           </button>
         );
       })}

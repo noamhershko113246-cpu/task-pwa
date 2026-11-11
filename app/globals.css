@@ -41,6 +41,13 @@
   }
 }
 
+/* The phone's own "reduce transparency" accessibility setting wins over the in-app transparency choice. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-alpha: 1 !important;
+  }
+}
+
 html {
   direction: rtl;
   /* iOS otherwise re-scales text on rotation; also set on html so overflow can't leak past body. */
@@ -140,6 +147,9 @@ body {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { @apply bg-zinc-300 dark:bg-zinc-700 rounded-full; }
+/* A one-line row that scrolls sideways (e.g. the stand-in people): swipeable, no bar under it. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 .bottom-sheet-handle {
   width: 40px;

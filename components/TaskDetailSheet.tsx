@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useId } from "react";
-import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { X, Trash2, Send, Repeat, AlertTriangle, XCircle, Paperclip, FileText, Download, Loader2, Check } from "lucide-react";
 import { useDialog } from "@/lib/useDialog";
 import { Task, TeamMember, TaskStatus, STATUS_LABELS, Priority, PRIORITY_COLORS, StepDraft } from "@/lib/types";
@@ -14,7 +14,7 @@ import TaskStepsChecklist from "./TaskStepsChecklist";
 import { useTaskStore } from "@/lib/store";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import clsx from "clsx";
-import { DURATION, EASE, SHEET_SPRING, takeRecentTapY } from "@/lib/motion";
+import { DURATION, EASE, SHEET_SPRING, sheetDrag, takeRecentTapY } from "@/lib/motion";
 import DeadlineShortcuts from "./DeadlineShortcuts";
 import { keepFocusedFieldVisible } from "@/lib/keepFocusedFieldVisible";
 
@@ -89,6 +89,7 @@ export default function TaskDetailSheet({
   }, [savedFlash]);
   // Where the sheet grows from: the spot that was just tapped (the task's card), when there is one.
   const [originY, setOriginY] = useState<number | null>(null);
+  const [closedByDrag, setClosedByDrag] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragControls = useDragControls();
@@ -117,6 +118,7 @@ export default function TaskDetailSheet({
       // Phones only — on wide screens the sheet is a centered card, not a bottom sheet.
       const tapY = takeRecentTapY();
       setOriginY(window.innerWidth < 768 ? tapY : null);
+      setClosedByDrag(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id]);
@@ -231,10 +233,6 @@ export default function TaskDetailSheet({
     setCommentText("");
   };
 
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.offset.y > 100) handleClose();
-  };
-
   const handlePickFile = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,7 +253,7 @@ export default function TaskDetailSheet({
   const findMember = (id: string) => team.find((m) => m.id === id);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence custom={closedByDrag}>
       {task && (
         <>
           <motion.div
@@ -268,16 +266,21 @@ export default function TaskDetailSheet({
           <motion.div
             // Opened by tapping a task: the sheet grows out of where that card was, so it's clear where
             // it came from. Opened any other way (e.g. from a notification): it slides up as usual.
+            // Closing retraces the same path back into the card; swiped down, it leaves the way it was thrown.
             initial={originY !== null ? { opacity: 0, scale: 0.9, y: 0 } : { y: "100%" }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ y: "100%" }}
+            exit="exit"
+            variants={{
+              exit: (byDrag: boolean) =>
+                originY !== null && !byDrag
+                  ? { opacity: 0, scale: 0.9, transition: { duration: DURATION.base, ease: EASE } }
+                  : { y: "100%", transition: SHEET_SPRING },
+            }}
             transition={originY !== null ? { duration: DURATION.slow, ease: EASE } : SHEET_SPRING}
-            drag="y"
-            dragListener={false}
-            dragControls={dragControls}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
-            onDragEnd={handleDragEnd}
+            {...sheetDrag(dragControls, () => {
+              setClosedByDrag(true);
+              handleClose();
+            })}
             style={{
               ...(keyboard ? { bottom: keyboard, maxHeight: `calc(90dvh - ${keyboard}px)` } : {}),
               // The sheet's top sits ~10% down the screen; grow from the tapped point relative to that.
@@ -292,7 +295,7 @@ export default function TaskDetailSheet({
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}
-              className="flex cursor-grab justify-center pb-3 active:cursor-grabbing"
+              className="flex cursor-grab touch-none select-none justify-center pb-3 active:cursor-grabbing"
             >
               <div className="bottom-sheet-handle" />
             </div>

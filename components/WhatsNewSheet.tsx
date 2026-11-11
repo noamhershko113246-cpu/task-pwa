@@ -1,14 +1,15 @@
 "use client";
 
 import { useId } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { Megaphone, X } from "lucide-react";
 import { LATEST_RELEASE } from "@/lib/whatsNew";
 import { useDialog } from "@/lib/useDialog";
-import { SHEET_SPRING } from "@/lib/motion";
+import { SHEET_SPRING, sheetDrag } from "@/lib/motion";
 
 export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const dragControls = useDragControls();
   const titleId = useId();
   return (
     <AnimatePresence>
@@ -26,13 +27,14 @@ export default function WhatsNewSheet({ open, onClose }: { open: boolean; onClos
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={SHEET_SPRING}
+            {...sheetDrag(dragControls, onClose)}
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
             className="sheet-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white dark:bg-surface-dark-card px-5 pb-sheet pt-3 shadow-2xl md:bottom-6 md:mx-auto md:max-w-lg md:rounded-3xl"
           >
-            <div className="flex justify-center pb-3">
+            <div onPointerDown={(e) => dragControls.start(e)} className="flex cursor-grab touch-none select-none justify-center pb-3 active:cursor-grabbing">
               <div className="h-1.5 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
             </div>
 

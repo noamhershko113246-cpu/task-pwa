@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useId } from "react";
-import { AnimatePresence, motion, PanInfo, useDragControls } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { X, Repeat, Plus, ChevronUp, ChevronDown, User, Paperclip, FileText } from "lucide-react";
 import { useDialog } from "@/lib/useDialog";
 import { TeamMember, Task, Priority, PRIORITY_COLORS, MAX_STEPS, MAX_STEP_LENGTH } from "@/lib/types";
@@ -11,7 +11,7 @@ import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { CategoryPicker } from "./CategoryChips";
 import { ATTACHMENT_ACCEPT, MAX_FILES_ON_CREATE, validateAttachmentFile, formatFileSize } from "@/lib/attachments";
 import clsx from "clsx";
-import { DURATION, SHEET_SPRING } from "@/lib/motion";
+import { DURATION, SHEET_SPRING, sheetDrag } from "@/lib/motion";
 import DeadlineShortcuts from "./DeadlineShortcuts";
 import { keepFocusedFieldVisible } from "@/lib/keepFocusedFieldVisible";
 
@@ -220,10 +220,6 @@ export default function CreateTaskSheet({
     handleClose();
   };
 
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.offset.y > 100) handleClose();
-  };
-
   const canSubmit = Boolean(
     title.trim() && assigneeIds.size > 0 && (!isRecurring || (deadline && selectedDays.size > 0 && recurrenceEnd))
   );
@@ -244,12 +240,7 @@ export default function CreateTaskSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={SHEET_SPRING}
-            drag="y"
-            dragListener={false}
-            dragControls={dragControls}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
-            onDragEnd={handleDragEnd}
+            {...sheetDrag(dragControls, handleClose)}
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(88dvh - ${keyboard}px)` } : undefined}
             onFocusCapture={keepFocusedFieldVisible}
             ref={dialogRef}
@@ -260,7 +251,7 @@ export default function CreateTaskSheet({
           >
             <div
               onPointerDown={(e) => dragControls.start(e)}
-              className="flex cursor-grab justify-center pb-3 active:cursor-grabbing"
+              className="flex cursor-grab touch-none select-none justify-center pb-3 active:cursor-grabbing"
             >
               <div className="bottom-sheet-handle" />
             </div>

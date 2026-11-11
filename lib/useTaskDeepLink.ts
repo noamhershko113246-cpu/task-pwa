@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Task } from "./types";
+import { defaultDeadlineHM } from "./deadlineTime";
 import { useToast } from "@/components/ToastProvider";
 
 /**
@@ -66,14 +67,15 @@ export function useTaskDeepLink({
 
     if (action === "snooze") {
       const before = task.deadline ?? null;
-      // Tomorrow, at the same time of day as the current deadline (end of day if there was none).
+      // Tomorrow, at the same time of day as the current deadline (the default deadline time if there was none).
       const next = new Date();
       next.setDate(next.getDate() + 1);
       if (before) {
         const old = new Date(before);
         next.setHours(old.getHours(), old.getMinutes(), 0, 0);
       } else {
-        next.setHours(23, 59, 0, 0);
+        const [h, m] = defaultDeadlineHM();
+        next.setHours(h, m, 0, 0);
       }
       updateTask(task.id, { deadline: next.toISOString() }, actorId);
       showToast(`"${task.title}" נדחתה למחר`, "success", {

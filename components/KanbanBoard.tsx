@@ -1,12 +1,11 @@
 "use client";
 
 import { dndAnnouncements, dndScreenReaderInstructions } from "@/lib/dndA11y";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -59,8 +58,11 @@ function KanbanCard({
           ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 }
           : undefined
       }
+      // Not `touch-none`: that made every card a dead zone for scrolling on a phone (no swiping the
+      // board or the page with a finger on a card). A mouse still drags right away; on touch,
+      // press-and-hold the card to pick it up (MouseOrHoldSensor below).
       className={clsx(
-        "touch-none select-none rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3 shadow-card transition-shadow",
+        "touch-manipulation select-none [-webkit-touch-callout:none] rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-surface-dark-card p-3 shadow-card transition-shadow",
         isDragging ? "opacity-50 shadow-lg" : "active:scale-[0.98]"
       )}
     >
@@ -137,6 +139,21 @@ function KanbanColumn({
   );
 }
 
+/**
+ * One sensor for mouse and finger, with a different way of picking a card up for each: a mouse after
+ * moving a few pixels; a finger only after a short press-and-hold, so a swipe that starts on a card
+ * still scrolls the board / the page (the cards are no longer `touch-none`, see KanbanCard).
+ */
+class MouseOrHoldSensor extends PointerSensor {
+  constructor(props: ConstructorParameters<typeof PointerSensor>[0]) {
+    const touch = props.event instanceof PointerEvent && props.event.pointerType === "touch";
+    super({
+      ...props,
+      options: { ...props.options, activationConstraint: touch ? { delay: 180, tolerance: 6 } : { distance: 8 } },
+    });
+  }
+}
+
 export default function KanbanBoard({
   tasks,
   team,
@@ -150,8 +167,7 @@ export default function KanbanBoard({
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(MouseOrHoldSensor),
     // Keyboard: Space picks a card/person up, arrows move it, Space drops, Esc cancels.
     // Enter is left free to open the item (see onKeyDown on the draggable).
     useSensor(KeyboardSensor, { keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] } })
@@ -159,11 +175,30 @@ export default function KanbanBoard({
 
   const activeTask = tasks.find((t) => t.id === activeId);
 
+  // While a card is held, the finger moves the card, not the page: without this the browser would take
+  // the first move as a scroll and cancel the drag. Registered for the board's whole life (not only
+  // during a drag) because iPhone ignores this for listeners added after the touch began.
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    const holdPageStill = (e: TouchEvent) => {
+      if (draggingRef.current && e.cancelable) e.preventDefault();
+    };
+    window.addEventListener("touchmove", holdPageStill, { passive: false });
+    return () => window.removeEventListener("touchmove", holdPageStill);
+  }, []);
+
   const handleDragStart = (event: DragStartEvent) => {
+    draggingRef.current = true;
     setActiveId(String(event.active.id));
   };
 
+  const handleDragCancel = () => {
+    draggingRef.current = false;
+    setActiveId(null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
+    draggingRef.current = false;
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
@@ -179,6 +214,7 @@ export default function KanbanBoard({
       sensors={sensors}
       accessibility={{ announcements: dndAnnouncements, screenReaderInstructions: dndScreenReaderInstructions }}
       onDragStart={handleDragStart}
+      onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
       <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
